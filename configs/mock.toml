@@ -1,0 +1,21 @@
+# Offline demo with simulated backends. Results are SIMULATED, not real model results.
+#   voxguard gen --n 100 --out data/mock_cases.jsonl
+#   voxguard bench --config configs/mock.toml
+
+[data]
+cases = "data/mock_cases.jsonl"
+
+[run]
+concurrency = 16
+out_dir = "runs"
+
+[shadow]
+type = "mock"
+
+[[agents]]
+type = "mock"
+profile = "sts_typical"
+
+[[agents]]
+type = "mock"
+profile = "cascade_typical"

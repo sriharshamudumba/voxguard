@@ -1,0 +1,43 @@
+# Run with:  voxguard bench --config configs/example.toml
+# API keys come from environment variables (OPENAI_API_KEY, GEMINI_API_KEY, DEEPGRAM_API_KEY).
+# Never commit keys to this file.
+
+[data]
+cases = "data/cases.jsonl"          # created by `voxguard gen`, audio added by `voxguard synth`
+
+[run]
+concurrency = 4
+use_keyterms = true                 # pass roster names to the shadow recognizer
+out_dir = "runs"
+
+# Independent second recognizer the plugins compare against.
+[shadow]
+type = "deepgram"                   # mock | openai_stt | deepgram | faster_whisper
+model = "nova-3"
+
+# Speech-to-speech, closed
+[[agents]]
+type = "openai_realtime"
+model = "gpt-realtime"
+schema = "ga"
+
+[[agents]]
+type = "gemini_live"
+model = "gemini-live-2.5-flash"
+
+# Open speech LLM served locally by vLLM (OpenAI-compatible, audio in)
+# vllm serve fixie-ai/ultravox-v0_5-llama-3_1-8b --enable-auto-tool-choice --tool-call-parser llama3_json
+[[agents]]
+type = "audio_llm"
+name = "ultravox-8b (vLLM)"
+base_url = "http://localhost:8000/v1"
+model = "fixie-ai/ultravox-v0_5-llama-3_1-8b"
+api_key = "local"
+
+# Cascade: any STT + any OpenAI-compatible LLM
+[[agents]]
+type = "cascade"
+name = "whisper-1 + gpt-4.1-mini"
+llm_base_url = "https://api.openai.com/v1"
+llm_model = "gpt-4.1-mini"
+stt = { type = "openai_stt", model = "whisper-1" }
