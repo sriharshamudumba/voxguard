@@ -1,0 +1,48 @@
+# Six providers, before and after the plugins.
+#   source .env
+#   voxguard gen --n 10 --out data/cases.jsonl
+#   voxguard synth --cases data/cases.jsonl --provider openai
+#   voxguard bench --config configs/all_providers.toml
+#   voxguard report
+# Setup for ElevenLabs and Vapi: docs/PROVIDERS.md
+
+[data]
+cases = "data/cases.jsonl"
+
+[run]
+concurrency = 1          # free tiers and real-time streaming; raise once everything works
+use_keyterms = true
+out_dir = "runs"
+
+[shadow]
+type = "deepgram"        # second recognizer used by the plugins
+model = "nova-3"
+
+[[agents]]
+type = "openai_realtime"
+name = "OpenAI gpt-realtime"
+model = "gpt-realtime"
+
+[[agents]]
+type = "gemini_live"
+name = "Google Gemini Live"
+model = "gemini-live-2.5-flash"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Voice Agent"
+think_model = "gpt-4o-mini"
+
+[[agents]]
+type = "assemblyai_agent"
+name = "AssemblyAI Voice Agent"
+
+[[agents]]
+type = "elevenlabs_agent"
+name = "ElevenLabs Agents"
+agent_id = "PASTE_AGENT_ID"
+
+[[agents]]
+type = "vapi"
+name = "Vapi"
+assistant_id = "PASTE_ASSISTANT_ID"

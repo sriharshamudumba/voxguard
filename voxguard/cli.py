@@ -4,6 +4,7 @@
   voxguard synth  --cases data/cases.jsonl --provider openai --out data/audio
   voxguard bench  --config configs/example.toml
   voxguard vad    --cases data/cases.jsonl
+  voxguard report --runs runs --out report
 """
 from __future__ import annotations
 
@@ -50,6 +51,10 @@ def main(argv=None) -> None:
     b = sub.add_parser("bench", help="run before/after benchmark from a TOML config")
     b.add_argument("--config", required=True)
 
+    r = sub.add_parser("report", help="charts and markdown summary from saved runs")
+    r.add_argument("--runs", default="runs")
+    r.add_argument("--out", default="report")
+
     v = sub.add_parser("vad", help="offline endpointing benchmark")
     v.add_argument("--cases", default=None)
     v.add_argument("--n", type=int, default=100)
@@ -79,6 +84,9 @@ def main(argv=None) -> None:
                                "shadow": {k: v for k, v in cfg.get("shadow", {}).items() if "key" not in k}})
             print(f"\n{agent.name}  ->  {d}")
             print(_fmt(summ))
+    elif a.cmd == "report":
+        from .bench.report import build_report
+        print(f"report written to {build_report(a.runs, a.out)}")
     elif a.cmd == "vad":
         from .bench.vad_sim import simulate, summarize_vad
         from .vad import EntityAwareEndpointer, FixedEndpointer

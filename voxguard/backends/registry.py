@@ -7,6 +7,10 @@ Agent config examples:
    model = "fixie-ai/ultravox-v0_5-llama-3_1-8b", api_key = "x"}
   {type = "cascade", stt = {type = "openai_stt", model = "whisper-1"},
    llm_base_url = "https://api.openai.com/v1", llm_model = "gpt-4.1-mini"}
+  {type = "deepgram_agent", think_model = "gpt-4o-mini"}
+  {type = "assemblyai_agent"}
+  {type = "elevenlabs_agent", agent_id = "..."}
+  {type = "vapi", assistant_id = "..."}
   {type = "mock", profile = "sts_typical"}
 """
 from __future__ import annotations
@@ -60,8 +64,25 @@ def build_agent(cfg: dict[str, Any]) -> AgentBackend:
                               llm_base_url=cfg.get("llm_base_url", "https://api.openai.com/v1"),
                               llm_model=cfg["llm_model"], api_key=cfg.get("api_key"),
                               api_key_env=cfg.get("api_key_env", "OPENAI_API_KEY"), name=name)
+    if t == "deepgram_agent":
+        from .deepgram_agent import DeepgramAgentBackend
+        return DeepgramAgentBackend(listen_model=cfg.get("listen_model", "nova-3"),
+                                    think_provider=cfg.get("think_provider", "open_ai"),
+                                    think_model=cfg.get("think_model", "gpt-4o-mini"),
+                                    api_key=cfg.get("api_key"), name=name)
+    if t == "assemblyai_agent":
+        from .assemblyai_agent import AssemblyAIAgentBackend
+        return AssemblyAIAgentBackend(api_key=cfg.get("api_key"), voice=cfg.get("voice"), name=name)
+    if t == "elevenlabs_agent":
+        from .elevenlabs_agent import ElevenLabsAgentBackend
+        return ElevenLabsAgentBackend(agent_id=cfg["agent_id"], api_key=cfg.get("api_key"),
+                                      override_prompt=cfg.get("override_prompt", False), name=name)
+    if t == "vapi":
+        from .vapi import VapiBackend
+        return VapiBackend(assistant_id=cfg["assistant_id"], api_key=cfg.get("api_key"), name=name)
     raise ValueError(f"unknown agent type {t!r}")
 
 
-AGENT_TYPES = ["mock", "openai_realtime", "gemini_live", "audio_llm", "cascade"]
+AGENT_TYPES = ["mock", "openai_realtime", "gemini_live", "deepgram_agent", "assemblyai_agent",
+               "elevenlabs_agent", "vapi", "audio_llm", "cascade"]
 SHADOW_TYPES = ["mock", "openai_stt", "deepgram", "faster_whisper"]

@@ -100,7 +100,7 @@ with tab_run:
         m1, m2, m3 = st.columns(3)
         a_type = m1.selectbox("Type", AGENT_TYPES)
         a_name = m2.text_input("Display name (optional)")
-        a_model = m3.text_input("Model", "")
+        a_model = m3.text_input("Model, or agent/assistant ID for ElevenLabs and Vapi", "")
         m4, m5, m6 = st.columns(3)
         a_base = m4.text_input("Base URL (audio_llm, cascade LLM)", "https://api.openai.com/v1")
         a_key = m5.text_input("API key", type="password")
@@ -117,6 +117,14 @@ with tab_run:
             elif a_type in ("openai_realtime", "gemini_live"):
                 default = "gpt-realtime" if a_type == "openai_realtime" else "gemini-live-2.5-flash"
                 cfg.update(model=a_model or default, api_key=a_key or None)
+            elif a_type == "deepgram_agent":
+                cfg.update(think_model=a_model or "gpt-4o-mini", api_key=a_key or None)
+            elif a_type == "assemblyai_agent":
+                cfg.update(api_key=a_key or None)
+            elif a_type == "elevenlabs_agent":
+                cfg.update(agent_id=a_model, api_key=a_key or None)
+            elif a_type == "vapi":
+                cfg.update(assistant_id=a_model, api_key=a_key or None)
             elif a_type == "audio_llm":
                 cfg.update(base_url=a_base, model=a_model, api_key=a_key or None)
             elif a_type == "cascade":

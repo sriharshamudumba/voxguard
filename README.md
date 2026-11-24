@@ -112,12 +112,20 @@ streamlit run ui/app.py
 |---|---|---|
 | `openai_realtime` | gpt-realtime, gpt-realtime-2 (GA and beta event schemas) | Written against the public docs, not yet verified on a live key |
 | `gemini_live` | Gemini Live models | Written against the public docs, not yet verified on a live key |
+| `deepgram_agent` | Deepgram Voice Agent API (Nova-3 + chosen LLM + Aura) | Written against the public docs, not yet verified on a live key |
+| `assemblyai_agent` | AssemblyAI Voice Agent API | Written against the public docs, not yet verified on a live key |
+| `elevenlabs_agent` | ElevenLabs Agents (needs an agent with a client tool) | Written against the public docs, not yet verified on a live key |
+| `vapi` | Vapi over the WebSocket transport (needs an assistant) | Written against the public docs, not yet verified on a live key |
 | `audio_llm` | Any OpenAI-compatible chat endpoint that accepts `input_audio`: gpt-4o-audio, Ultravox / Qwen-Omni on vLLM | Written against the public docs, not yet verified |
 | `cascade` | Any STT below + any OpenAI-compatible LLM (OpenAI, Groq, Together, vLLM, Ollama) | Written against the public docs, not yet verified |
 | shadow `openai_stt` | OpenAI, Groq, or vLLM `/audio/transcriptions` | Not yet verified |
 | shadow `deepgram` | Nova-3, with keyterm prompting | Not yet verified |
 | shadow `faster_whisper` | Local, free | Not yet verified |
 | `mock` | Simulated error models for tests and CI | Tested |
+
+Provider setup, including ElevenLabs and Vapi: [docs/PROVIDERS.md](docs/PROVIDERS.md). All six providers in one config: `configs/all_providers.toml`.
+
+Charts and a markdown summary from saved runs: `voxguard report` writes `report/REPORT.md` plus `silent_error.png`, `silent_error_by_entity.png`, `false_confirm.png`, and `latency.png`.
 
 Adding a backend means implementing one method, `run_turn(TurnInput) -> AgentResult`. See [docs/ADDING_A_BACKEND.md](docs/ADDING_A_BACKEND.md).
 
