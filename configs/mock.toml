@@ -6,6 +6,7 @@
 cases = "data/mock_cases.jsonl"
 
 [run]
+repeats = 1             # run the whole set N times; models are not deterministic
 concurrency = 16
 out_dir = "runs"
 

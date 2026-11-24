@@ -40,3 +40,27 @@ def test_telephony_channel_shape_and_mulaw_roundtrip():
     assert sr == 8000 and abs(len(y) - 8000) < 5
     q = mulaw_decode(mulaw_encode(x))
     assert np.max(np.abs(q - x)) < 0.02
+
+
+def test_expand_accents_and_bootstrap():
+    from voxguard.bench.dataset import expand_accents
+    from voxguard.bench.metrics import bootstrap_ci
+    cases = expand_accents(generate_cases(5), ["us", "indian"])
+    assert len(cases) == 40 and {c.accent for c in cases} == {"us", "indian"}
+    assert expand_accents(cases, ["us"]) == cases  # already expanded cases are kept as-is
+    rows, _ = asyncio.run(run_benchmark(cases, MockAgent(), MockShadow()))
+    assert set(rows["accent"]) == {"us", "indian"}
+    ci = bootstrap_ci(rows, n_boot=200).iloc[0]
+    assert ci.before_lo <= ci.before_hi and ci.after_lo <= ci.after_hi
+
+
+def test_report_builds(tmp_path):
+    from voxguard.bench.dataset import expand_accents
+    from voxguard.bench.report import build_report
+    from voxguard.bench.runner import save_run
+    cases = expand_accents(generate_cases(5), ["us", "scottish"])
+    rows, summ = asyncio.run(run_benchmark(cases, MockAgent(), MockShadow()))
+    save_run(rows, summ, str(tmp_path / "runs"))
+    out = build_report(str(tmp_path / "runs"), str(tmp_path / "report"))
+    for f in ["REPORT.md", "silent_error.png", "accents.png", "latency.png"]:
+        assert (out / f).exists()

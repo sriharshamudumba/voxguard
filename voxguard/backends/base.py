@@ -35,6 +35,7 @@ class TurnInput:
     caller_text: str = ""              # ground-truth text; only the mock backends read it
     truth: dict[str, Any] = field(default_factory=dict)   # expected args; only mock backends read it
     seed: int = 0
+    accent: str = ""                   # only mock backends read it
 
 
 class AgentBackend:

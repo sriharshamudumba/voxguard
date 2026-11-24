@@ -10,6 +10,7 @@
 cases = "data/cases.jsonl"
 
 [run]
+repeats = 1             # run the whole set N times; models are not deterministic
 concurrency = 1          # free tiers and real-time streaming; raise once everything works
 use_keyterms = true
 out_dir = "runs"

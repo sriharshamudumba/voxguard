@@ -21,15 +21,19 @@ import httpx
 from ..backends.audio import read_wav, telephony_channel, write_wav
 from .dataset import Case
 
-ACCENTS = [
-    ("alloy", "Speak naturally at a normal phone pace with a General American accent."),
-    ("coral", "Speak with a noticeable Indian English accent, at a natural pace."),
-    ("sage", "Speak with an Irish accent, at a natural pace."),
-    ("ash", "Speak with a Scottish accent, at a natural pace."),
-    ("verse", "Speak with a Nigerian English accent, at a natural pace."),
-    ("shimmer", "Speak with a Mexican Spanish accent in English, at a natural pace."),
-    ("echo", "Speak quickly and casually, like on a busy street."),
-]
+# accent key: (OpenAI voice, speaking instruction)
+ACCENTS: dict[str, tuple[str, str]] = {
+    "us": ("alloy", "Speak naturally at a normal phone pace with a General American accent."),
+    "indian": ("coral", "Speak with a noticeable Indian English accent, at a natural pace."),
+    "irish": ("sage", "Speak with an Irish accent, at a natural pace."),
+    "scottish": ("ash", "Speak with a Scottish accent, at a natural pace."),
+    "nigerian": ("verse", "Speak with a Nigerian English accent, at a natural pace."),
+    "mexican": ("shimmer", "Speak with a Mexican Spanish accent in English, at a natural pace."),
+    "chinese": ("nova", "Speak with a Mandarin Chinese accent in English, at a natural pace."),
+    "arabic": ("onyx", "Speak with an Arabic accent in English, at a natural pace."),
+    "british": ("fable", "Speak with a London British accent, at a natural pace."),
+    "fast_casual": ("echo", "Speak quickly and casually, like on a busy street, slightly mumbling."),
+}
 
 
 def tts_openai(text: str, voice: str, instructions: str, api_key: str | None = None,
@@ -71,7 +75,9 @@ def synthesize_cases(cases: list[Case], out_dir: str | Path, provider: str = "op
             continue
         text = c.tts_text or c.caller_text
         if provider == "openai":
-            voice, instr = ACCENTS[i % len(ACCENTS)]
+            if not c.accent:
+                c.accent = list(ACCENTS)[i % len(ACCENTS)]
+            voice, instr = ACCENTS[c.accent]
             raw = tts_openai(text, voice, instr, api_key)
         elif provider == "piper":
             raw = tts_piper(text, piper_model or os.environ.get("PIPER_MODEL", ""))

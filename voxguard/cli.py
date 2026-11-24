@@ -1,7 +1,7 @@
 """Command line.
 
   voxguard gen    --n 50 --out data/cases.jsonl
-  voxguard synth  --cases data/cases.jsonl --provider openai --out data/audio
+  voxguard synth  --cases data/cases.jsonl --provider openai --accents all
   voxguard bench  --config configs/example.toml
   voxguard vad    --cases data/cases.jsonl
   voxguard report --runs runs --out report
@@ -40,6 +40,8 @@ def main(argv=None) -> None:
     g.add_argument("--n", type=int, default=50, help="cases per kind")
     g.add_argument("--seed", type=int, default=7)
     g.add_argument("--out", default="data/cases.jsonl")
+    g.add_argument("--accents", default="",
+                   help="expand each case into one per accent now ('all' or comma list); synth can also do this")
 
     s = sub.add_parser("synth", help="synthesize caller audio through a phone channel")
     s.add_argument("--cases", default="data/cases.jsonl")
@@ -47,6 +49,8 @@ def main(argv=None) -> None:
     s.add_argument("--out", default="data/audio")
     s.add_argument("--snr", type=float, default=20.0)
     s.add_argument("--loss", type=float, default=0.01)
+    s.add_argument("--accents", default="all",
+                   help="'all', 'rotate' (one accent per case), or a comma list, e.g. us,indian,scottish")
 
     b = sub.add_parser("bench", help="run before/after benchmark from a TOML config")
     b.add_argument("--config", required=True)
@@ -62,11 +66,23 @@ def main(argv=None) -> None:
     a = ap.parse_args(argv)
     if a.cmd == "gen":
         cases = generate_cases(a.n, seed=a.seed)
+        if a.accents:
+            from .bench.dataset import expand_accents
+            from .bench.synth import ACCENTS
+            cases = expand_accents(cases, list(ACCENTS) if a.accents == "all" else a.accents.split(","))
         save_cases(cases, a.out)
         print(f"wrote {len(cases)} cases to {a.out}")
     elif a.cmd == "synth":
-        from .bench.synth import synthesize_cases
-        cases = synthesize_cases(load_cases(a.cases), a.out, a.provider, a.snr, a.loss)
+        from .bench.dataset import expand_accents
+        from .bench.synth import ACCENTS, synthesize_cases
+        cases = load_cases(a.cases)
+        if a.accents != "rotate":
+            chosen = list(ACCENTS) if a.accents == "all" else [x.strip() for x in a.accents.split(",")]
+            unknown = [x for x in chosen if x not in ACCENTS]
+            if unknown:
+                raise SystemExit(f"unknown accents {unknown}; choose from {list(ACCENTS)}")
+            cases = expand_accents(cases, chosen)
+        cases = synthesize_cases(cases, a.out, a.provider, a.snr, a.loss)
         save_cases(cases, a.cases)
         print(f"synthesized {len(cases)} files into {a.out}; updated {a.cases}")
     elif a.cmd == "bench":
@@ -75,6 +91,7 @@ def main(argv=None) -> None:
         cases = load_cases(cfg["data"]["cases"])
         shadow = build_shadow(cfg.get("shadow", {"type": "mock"}))
         rc = RunConfig(concurrency=cfg.get("run", {}).get("concurrency", 4),
+                       repeats=cfg.get("run", {}).get("repeats", 1),
                        use_keyterms=cfg.get("run", {}).get("use_keyterms", True))
         for acfg in cfg["agents"]:
             agent = build_agent(acfg)

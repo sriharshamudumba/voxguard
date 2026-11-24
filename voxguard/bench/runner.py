@@ -35,6 +35,7 @@ def default_chain() -> PluginChain:
 @dataclass
 class RunConfig:
     concurrency: int = 4
+    repeats: int = 1               # run the whole set this many times (models are not deterministic)
     use_keyterms: bool = True      # pass roster names to the shadow recognizer
     out_dir: str = "runs"
     tag: str = ""
@@ -42,9 +43,10 @@ class RunConfig:
 
 
 async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain: PluginChain,
-               cfg: RunConfig) -> list[dict]:
+               cfg: RunConfig, trial: int = 0) -> list[dict]:
     audio, sr = (read_wav(case.audio_path) if case.audio_path else (np.zeros(1600, np.float32), 8000))
-    turn = TurnInput(audio, sr, SYSTEM_PROMPT, TOOLS, case.caller_text, case.expected, case.seed)
+    turn = TurnInput(audio, sr, SYSTEM_PROMPT, TOOLS, case.caller_text, case.expected,
+                     case.seed + 7919 * trial, case.accent)
     keyterms = case.roster if (cfg.use_keyterms and case.roster) else None
 
     async def run_shadow():
@@ -73,7 +75,8 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
         b, a = call.args.get(f), guarded.tool_call.args.get(f)
         before_o, after_o = score_field(f, exp, b, a, v.action.value if v else None)
         rows.append({
-            "case_id": case.id, "kind": case.kind, "field": f, "model": agent.name, "agent_kind": agent.kind,
+            "case_id": case.id, "kind": case.kind, "accent": case.accent or "unknown", "trial": trial,
+            "field": f, "model": agent.name, "agent_kind": agent.kind,
             "expected": exp, "before_value": b, "after_value": a,
             "action": v.action.value if v else None, "p_error": v.p_error if v else None,
             "reason": v.reason if v else "", "before": before_o, "after": after_o,
@@ -94,16 +97,18 @@ async def run_benchmark(cases: list[Case], agent: AgentBackend, shadow: ShadowAS
     done = 0
     all_rows: list[dict] = []
 
-    async def guarded(c: Case):
+    jobs = [(c, t) for t in range(max(1, cfg.repeats)) for c in cases]
+
+    async def guarded(c: Case, t: int):
         nonlocal done
         async with sem:
-            rows = await _one(c, agent, shadow, chain, cfg)
+            rows = await _one(c, agent, shadow, chain, cfg, t)
         done += 1
         if progress:
-            progress(done, len(cases))
+            progress(done, len(jobs))
         return rows
 
-    for rows in await asyncio.gather(*(guarded(c) for c in cases)):
+    for rows in await asyncio.gather(*(guarded(c, t) for c, t in jobs)):
         all_rows.extend(rows)
     await agent.close()
     df = pd.DataFrame(all_rows)

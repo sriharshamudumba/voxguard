@@ -50,6 +50,7 @@ class Case:
     tts_text: str = ""          # text fed to TTS (may use respellings)
     audio_path: str | None = None
     seed: int = 0
+    accent: str = ""            # set by synthesis; one case per accent
 
 
 def _random_phone(rng: random.Random) -> str:
@@ -133,3 +134,17 @@ def save_cases(cases: list[Case], path: str | Path) -> None:
 def load_cases(path: str | Path) -> list[Case]:
     with open(path) as f:
         return [Case(**json.loads(line)) for line in f if line.strip()]
+
+
+def expand_accents(cases: list[Case], accents: list[str]) -> list[Case]:
+    """One copy of every case per accent. Same text and expected values, different speaker."""
+    out = []
+    for c in cases:
+        if c.accent:            # already expanded
+            out.append(c)
+            continue
+        for a in accents:
+            d = asdict(c)
+            d.update(id=f"{c.id}__{a}", accent=a, audio_path=None)
+            out.append(Case(**d))
+    return out

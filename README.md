@@ -84,6 +84,10 @@ The agent is called once per case. "Before" is its raw tool call. "After" is the
 | `broken` | right value, plugin changed it to a wrong one |
 | `agent_p50_ms`, `guard_p95_ms` | agent latency, and time added by the plugins |
 
+### Accents and repeats
+
+`voxguard synth --accents all` records every case once per accent: us, british, irish, scottish, indian, nigerian, mexican, chinese, arabic, fast_casual. Pick a subset with `--accents us,indian,scottish`. Set `repeats` in the config to run the whole set several times, since model outputs vary between runs. The report adds before/after heatmaps by accent and 95% bootstrap confidence intervals that resample whole test cases, so accent copies and repeats of one case are not counted as independent evidence.
+
 A plugin can always "win" by confirming everything, so `after_silent_error` and `false_confirm` must be read together.
 
 ### Quick start
@@ -96,11 +100,12 @@ voxguard gen --n 100 --out data/mock_cases.jsonl
 voxguard bench --config configs/mock.toml
 voxguard vad --n 100
 
-# real models
-export OPENAI_API_KEY=... DEEPGRAM_API_KEY=... GEMINI_API_KEY=...
-voxguard gen --n 50 --out data/cases.jsonl
-voxguard synth --cases data/cases.jsonl --provider openai     # or piper / espeak
-voxguard bench --config configs/example.toml
+# real models (keys in .env, see docs/PROVIDERS.md)
+source .env
+voxguard gen --n 10 --out data/cases.jsonl
+voxguard synth --cases data/cases.jsonl --provider openai --accents all   # every case in 10 accents
+voxguard bench --config configs/all_providers.toml
+voxguard report                                                          # charts + REPORT.md
 
 # UI
 streamlit run ui/app.py

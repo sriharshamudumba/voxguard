@@ -29,6 +29,16 @@ _ALL_NAMES = {**NAMES, **FIRST_TIME_NAMES}
 # second opinion can catch. Independent errors would overstate the plugin's benefit.
 ACOUSTIC_CORRELATION = 0.4
 
+# Simulated difficulty multipliers per accent. Illustrative only, not measurements.
+ACCENT_DIFFICULTY = {"us": 0.6, "british": 0.8, "irish": 1.1, "scottish": 1.4, "indian": 1.3,
+                     "nigerian": 1.4, "mexican": 1.1, "chinese": 1.3, "arabic": 1.2, "fast_casual": 1.5}
+
+
+def _scaled(p: dict, accent: str) -> dict:
+    k = ACCENT_DIFFICULTY.get(accent, 1.0)
+    return {key: (v * k if key != "latency" else v) for key, v in p.items()}
+
+
 PROFILES = {
     # rates are per entity
     "sts_typical": dict(digit_sub=0.07, digit_drop=0.02, digit_pad=0.05, name_sub=0.18, latency=(900, 250)),
@@ -81,7 +91,7 @@ class MockAgent(AgentBackend):
     seed_offset: int = 0
 
     async def run_turn(self, turn: TurnInput) -> AgentResult:
-        p = PROFILES[self.profile]
+        p = _scaled(PROFILES[self.profile], turn.accent)
         args = {}
         for k, v in turn.truth.items():
             rng = _rng(turn.seed, k, f"agent-{self.profile}-{self.seed_offset}")
@@ -97,7 +107,7 @@ class MockShadow(ShadowASR):
     name: str = "mock:shadow"
 
     async def transcribe(self, turn: TurnInput, keyterms: list[str] | None = None) -> ShadowTranscript:
-        p = dict(PROFILES[self.profile])
+        p = _scaled(PROFILES[self.profile], turn.accent)
         parts = []
         for k, v in turn.truth.items():
             rng = _rng(turn.seed, k, "shadow")

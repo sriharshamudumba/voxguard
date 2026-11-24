@@ -78,9 +78,14 @@ with tab_run:
         snr = s2.number_input("SNR dB", 0.0, 60.0, 20.0)
         loss = s3.number_input("Packet loss", 0.0, 0.2, 0.01, step=0.01)
         tts_key = s4.text_input("API key (openai only)", type="password")
+        from voxguard.bench.synth import ACCENTS
+        accents = st.multiselect("Accents (each case is recorded once per accent)", list(ACCENTS),
+                                 default=list(ACCENTS))
         if st.button("Synthesize") and cases:
+            from voxguard.bench.dataset import expand_accents
             from voxguard.bench.synth import synthesize_cases
             with st.spinner("Synthesizing"):
+                cases = expand_accents(cases, accents or ["us"])
                 synthesize_cases(cases, "data/audio", provider, snr, loss, api_key=tts_key or None)
                 save_cases(cases, cases_path)
             st.success("Done. Audio is 8 kHz mu-law through a 300-3400 Hz band, like a phone line.")
@@ -148,7 +153,9 @@ with tab_run:
     use_names = p2.checkbox("Names", True)
     phone_cost = p3.number_input("Cost of a wrong phone number vs one extra turn", 1.0, 200.0, 20.0)
     name_cost = p4.number_input("Cost of a wrong name vs one extra turn", 1.0, 200.0, 8.0)
-    use_keyterms = st.checkbox("Pass roster names to the shadow recognizer as keyterms", True)
+    k1, k2 = st.columns(2)
+    use_keyterms = k1.checkbox("Pass roster names to the shadow recognizer as keyterms", True)
+    repeats = k2.number_input("Repeats (run the whole set N times)", 1, 10, 1)
 
     if st.button("Run benchmark", type="primary", disabled=not (cases and st.session_state.models)):
         plugins = []
@@ -165,7 +172,7 @@ with tab_run:
             bar = st.progress(0.0, text=agent.name)
             try:
                 rows, summ = asyncio.run(run_benchmark(
-                    cases, agent, shadow, chain, RunConfig(use_keyterms=use_keyterms),
+                    cases, agent, shadow, chain, RunConfig(use_keyterms=use_keyterms, repeats=int(repeats)),
                     progress=lambda d, n, bar=bar, nm=agent.name: bar.progress(d / n, text=f"{nm}: {d}/{n}")))
             except Exception as e:
                 st.error(f"{agent.name}: {e}")
@@ -188,11 +195,15 @@ with tab_results:
         df = runs[runs["run"].isin(chosen)].copy()
         df["model"] = df["model"] + "  [" + df["run"].str[:15] + "]"
         if not df.empty:
-            summ = pd.concat([summarize(df), overall(df)], ignore_index=True)
-            kinds = ["all"] + sorted(k for k in summ["kind"].unique() if k != "all")
-            kind = st.radio("Entity", kinds, horizontal=True)
-            view = summ[summ["kind"] == kind]
-            st.dataframe(fmt(view.drop(columns=["kind"])), hide_index=True, width="stretch")
+            by = "kind"
+            if "accent" in df and df["accent"].nunique() > 1:
+                by = "accent" if st.radio("Break down by", ["Entity", "Accent"], horizontal=True) == "Accent" \
+                    else "kind"
+            summ = pd.concat([summarize(df, by), overall(df, by)], ignore_index=True)
+            kinds = ["all"] + sorted(k for k in summ[by].unique() if k != "all")
+            kind = st.radio("Group", kinds, horizontal=True)
+            view = summ[summ[by] == kind]
+            st.dataframe(fmt(view.drop(columns=[by])), hide_index=True, width="stretch")
 
             chart = view.set_index("model")[["before_error", "after_silent_error"]] * 100
             chart.columns = ["before %", "after %"]
@@ -209,10 +220,14 @@ with tab_results:
             outcome = f1.multiselect("After outcome", sorted(df["after"].unique()),
                                      default=[o for o in ["silent_error", "broken", "caught"] if o in set(df["after"])])
             kind_f = f2.multiselect("Kind", sorted(df["kind"].unique()))
+            if "accent" in df and df["accent"].nunique() > 1:
+                acc_f = st.multiselect("Accent", sorted(df["accent"].unique()))
+                if acc_f:
+                    df = df[df["accent"].isin(acc_f)]
             cdf = df[df["after"].isin(outcome)] if outcome else df
             if kind_f:
                 cdf = cdf[cdf["kind"].isin(kind_f)]
-            cols = ["model", "case_id", "expected", "before_value", "after_value", "action", "after",
+            cols = ["model", "case_id", "accent", "expected", "before_value", "after_value", "action", "after",
                     "p_error", "reason", "shadow_text", "caller_text"]
             st.dataframe(cdf[cols], hide_index=True, width="stretch")
             st.download_button("Download rows (CSV)", df.to_csv(index=False), "voxguard_rows.csv")

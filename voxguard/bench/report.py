@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .metrics import overall, summarize
+from .metrics import bootstrap_ci, overall, summarize
 from .runner import load_runs
 
 BEFORE = "#eb6834"
@@ -41,16 +41,29 @@ def _style(ax, xlabel: str):
     ax.set_xlabel(xlabel, color=INK_2, fontsize=9)
 
 
-def _before_after(ax, d: pd.DataFrame, title: str, label_after: bool = True):
+def _before_after(ax, d: pd.DataFrame, title: str, label_after: bool = True, ci: pd.DataFrame | None = None):
     import numpy as np
     d = d.sort_values("before_error")
     y = np.arange(len(d))
     h = 0.36
-    ax.barh(y + h / 2 + 0.01, d["before_error"] * 100, height=h, color=BEFORE, label="Before")
-    ax.barh(y - h / 2 - 0.01, d["after_silent_error"] * 100, height=h, color=AFTER, label="After")
+    berr = aerr = None
+    if ci is not None and not ci.empty:
+        c = d[["model"]].merge(ci, on="model", how="left")
+        berr = np.vstack([(d["before_error"].to_numpy() - c["before_lo"].to_numpy()),
+                          (c["before_hi"].to_numpy() - d["before_error"].to_numpy())]) * 100
+        aerr = np.vstack([(d["after_silent_error"].to_numpy() - c["after_lo"].to_numpy()),
+                          (c["after_hi"].to_numpy() - d["after_silent_error"].to_numpy())]) * 100
+    ekw = {"ecolor": INK_2, "elinewidth": 1, "capsize": 2}
+    ax.barh(y + h / 2 + 0.01, d["before_error"] * 100, height=h, color=BEFORE, label="Before",
+            xerr=berr, error_kw=ekw)
+    ax.barh(y - h / 2 - 0.01, d["after_silent_error"] * 100, height=h, color=AFTER, label="After",
+            xerr=aerr, error_kw=ekw)
     if label_after:
-        for yi, v in zip(y, d["after_silent_error"] * 100):
-            ax.text(v + 0.3, yi - h / 2 - 0.01, f"{v:.1f}%", va="center", fontsize=8, color=INK)
+        right = d["after_silent_error"].to_numpy() * 100
+        if aerr is not None:
+            right = right + np.nan_to_num(aerr[1])
+        for yi, v, r in zip(y, d["after_silent_error"] * 100, right):
+            ax.text(r + 0.4, yi - h / 2 - 0.01, f"{v:.1f}%", va="center", fontsize=8, color=INK)
     ax.set_yticks(y, d["model"], color=INK)
     ax.set_title(title, loc="left", fontsize=10, color=INK)
     _style(ax, "Silent error rate (%)")
@@ -66,6 +79,8 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
         raise SystemExit(f"no runs in {runs_dir}")
     rows = latest_per_model(runs)
     summ = pd.concat([summarize(rows), overall(rows)], ignore_index=True)
+    ci = bootstrap_ci(rows)
+    has_accents = rows["accent"].nunique() > 1 if "accent" in rows else False
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     summ.to_csv(out / "summary.csv", index=False)
@@ -74,7 +89,8 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
 
     # 1. headline: silent error before vs after, all entities
     fig, ax = plt.subplots(figsize=(8, height), facecolor=SURFACE)
-    _before_after(ax, summ[summ["kind"] == "all"], "Wrong values reaching the backend without the caller being asked")
+    _before_after(ax, summ[summ["kind"] == "all"],
+                  "Wrong values reaching the backend without the caller being asked (95% CI)", ci=ci)
     ax.legend(frameon=False, fontsize=9, loc="lower right", labelcolor=INK)
     fig.tight_layout()
     fig.savefig(out / "silent_error.png", dpi=160)
@@ -122,19 +138,62 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     fig.savefig(out / "latency.png", dpi=160)
     plt.close(fig)
 
+    # 5. accents: before and after heatmaps on one shared sequential scale
+    acc_table = None
+    if has_accents:
+        import numpy as np
+        from matplotlib.colors import LinearSegmentedColormap
+        acc = summarize(rows, by="accent")
+        before = acc.pivot(index="model", columns="accent", values="before_error") * 100
+        after = acc.pivot(index="model", columns="accent", values="after_silent_error") * 100
+        order = before.mean(axis=0).sort_values().index
+        before, after = before[order], after[order]
+        vmax = max(np.nanmax(before.to_numpy()), 1.0)
+        cmap = LinearSegmentedColormap.from_list("seq", ["#f2f7fd", "#9cc3ef", AFTER, "#123f73"])
+        fig, axes = plt.subplots(1, 2, figsize=(min(16, max(10, 0.75 * len(order) * 2)), height * 1.1),
+                                 facecolor=SURFACE, sharey=True)
+        for ax, mat, title in [(axes[0], before, "Before: error rate by accent (%)"),
+                               (axes[1], after, "After: silent error rate by accent (%)")]:
+            im = ax.imshow(mat.to_numpy(), cmap=cmap, vmin=0, vmax=vmax, aspect="auto")
+            ax.set_xticks(range(len(order)), order, rotation=35, ha="right", color=INK, fontsize=9)
+            ax.set_yticks(range(len(mat.index)), mat.index, color=INK, fontsize=9)
+            ax.set_title(title, loc="left", fontsize=10, color=INK)
+            for s_ in ax.spines.values():
+                s_.set_visible(False)
+            ax.tick_params(length=0)
+            for i in range(mat.shape[0]):
+                for j in range(mat.shape[1]):
+                    v = mat.iat[i, j]
+                    if pd.notna(v):
+                        ax.text(j, i, f"{v:.0f}", ha="center", va="center", fontsize=8,
+                                color="white" if v > vmax * 0.55 else INK)
+        fig.colorbar(im, ax=axes, shrink=0.8, label="%")
+        fig.savefig(out / "accents.png", dpi=160, bbox_inches="tight", facecolor=SURFACE)
+        plt.close(fig)
+        acc.to_csv(out / "summary_by_accent.csv", index=False)
+        acc_table = (before.round(1), after.round(1))
+
     # markdown summary
     t = summ[summ["kind"] == "all"].copy()
+    t = t.merge(ci, on="model", how="left")
     lines = ["# voxguard results", "",
              f"Runs: {', '.join(sorted(rows['run'].unique()))}", "",
+             "Intervals are 95% bootstrap confidence intervals, resampling whole test cases.", "",
              "| Model | n | Before error | After silent error | Reduction | Caught | Corrected | "
              "False confirm | p50 ms | p95 ms |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for _, r in t.sort_values("after_silent_error").iterrows():
         red = "" if pd.isna(r["relative_reduction"]) else f"{r['relative_reduction'] * 100:.0f}%"
-        lines.append(f"| {r['model']} | {r['n']} | {r['before_error'] * 100:.1f}% | "
-                     f"{r['after_silent_error'] * 100:.1f}% | {red} | {r['caught'] * 100:.1f}% | "
-                     f"{r['corrected'] * 100:.1f}% | {r['false_confirm'] * 100:.1f}% | "
+        lines.append(f"| {r['model']} | {r['n']} | {r['before_error'] * 100:.1f}% "
+                     f"({r['before_lo'] * 100:.1f} to {r['before_hi'] * 100:.1f}) | "
+                     f"{r['after_silent_error'] * 100:.1f}% "
+                     f"({r['after_lo'] * 100:.1f} to {r['after_hi'] * 100:.1f}) | {red} | "
+                     f"{r['caught'] * 100:.1f}% | {r['corrected'] * 100:.1f}% | {r['false_confirm'] * 100:.1f}% | "
                      f"{r['agent_p50_ms']:.0f} | {r['agent_p95_ms']:.0f} |")
+    if acc_table is not None:
+        b, a = acc_table
+        lines += ["", "## By accent", "", "Before error (%):", "", b.to_markdown(), "",
+                  "After silent error (%):", "", a.to_markdown(), "", "![Accents](accents.png)"]
     lines += ["", "![Silent error](silent_error.png)", "", "![By entity](silent_error_by_entity.png)", "",
               "![False confirmations](false_confirm.png)", "", "![Latency](latency.png)", ""]
     if rows["model"].str.startswith("mock:").any():

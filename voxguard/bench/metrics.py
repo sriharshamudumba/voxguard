@@ -48,18 +48,18 @@ def score_field(field: str, expected, before, after, action: str | None) -> tupl
     return before_o, ("corrected" if a == e else "silent_error")
 
 
-def summarize(rows: pd.DataFrame) -> pd.DataFrame:
-    """One row per (model, kind) with before/after rates."""
+def summarize(rows: pd.DataFrame, by: str = "kind") -> pd.DataFrame:
+    """One row per (model, group) with before/after rates. `by` is "kind" or "accent"."""
     if rows.empty:
         return pd.DataFrame()
     out = []
-    for (model, kind), g in rows.groupby(["model", "kind"]):
+    for (model, kind), g in rows.groupby(["model", by]):
         n = len(g)
         bo, ao = g["before"], g["after"]
         before_err = ((bo == "wrong") | (bo == "missing")).mean()
         silent = ao.isin(["silent_error", "broken", "missing"]).mean()
         out.append({
-            "model": model, "kind": kind, "n": n,
+            "model": model, by: kind, "n": n,
             "before_error": before_err,
             "after_silent_error": silent,
             "relative_reduction": (1 - silent / before_err) if before_err > 0 else np.nan,
@@ -75,7 +75,32 @@ def summarize(rows: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def overall(rows: pd.DataFrame) -> pd.DataFrame:
+def overall(rows: pd.DataFrame, by: str = "kind") -> pd.DataFrame:
     r = rows.copy()
-    r["kind"] = "all"
-    return summarize(r)
+    r[by] = "all"
+    return summarize(r, by)
+
+
+def bootstrap_ci(rows: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> pd.DataFrame:
+    """95% intervals for before error and after silent error per model.
+
+    Resamples whole test cases (all accents and trials of a case move together),
+    because rows from the same case are not independent.
+    """
+    rng = np.random.default_rng(seed)
+    out = []
+    for model, g in rows.groupby("model"):
+        base = g["case_id"].str.split("__").str[0]
+        per_case = g.assign(base=base,
+                            b=((g["before"] == "wrong") | (g["before"] == "missing")).astype(float),
+                            a=g["after"].isin(["silent_error", "broken", "missing"]).astype(float))
+        agg = per_case.groupby("base")[["b", "a"]].agg(["sum", "count"])
+        bs, bc = agg[("b", "sum")].to_numpy(), agg[("b", "count")].to_numpy()
+        as_ = agg[("a", "sum")].to_numpy()
+        idx = rng.integers(0, len(bs), size=(n_boot, len(bs)))
+        b_rates = bs[idx].sum(1) / bc[idx].sum(1)
+        a_rates = as_[idx].sum(1) / bc[idx].sum(1)
+        out.append({"model": model,
+                    "before_lo": np.quantile(b_rates, 0.025), "before_hi": np.quantile(b_rates, 0.975),
+                    "after_lo": np.quantile(a_rates, 0.025), "after_hi": np.quantile(a_rates, 0.975)})
+    return pd.DataFrame(out)
