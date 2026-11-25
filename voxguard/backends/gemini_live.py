@@ -46,6 +46,9 @@ class GeminiLiveBackend(AgentBackend):
             "systemInstruction": {"parts": [{"text": turn.system_prompt}]},
             "tools": [{"functionDeclarations": turn.tools}],
             "realtimeInputConfig": {"automaticActivityDetection": {"disabled": True}},
+            # text of what the model says, so a spoken question ("could you spell that?")
+            # is scored as the agent asking, not as a missing value
+            "outputAudioTranscription": {},
         }}
         try:
             async with websockets.connect(f"{URL}?key={self.api_key}", max_size=None) as ws:
@@ -68,6 +71,10 @@ class GeminiLiveBackend(AgentBackend):
                             calls.append(ToolCall(fc.get("name", ""), fc.get("args") or {}))
                         break  # the model waits for a toolResponse; one call is all we score
                     sc = msg.get("serverContent") or {}
+                    spoken = (sc.get("outputTranscription") or {}).get("text")
+                    if spoken:
+                        first = first or (time.perf_counter() - t_end) * 1000
+                        text.append(spoken)
                     for part in (sc.get("modelTurn") or {}).get("parts", []):
                         if "text" in part:
                             first = first or (time.perf_counter() - t_end) * 1000
@@ -77,4 +84,4 @@ class GeminiLiveBackend(AgentBackend):
         except Exception as e:
             return AgentResult(calls, "".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
         total = (time.perf_counter() - t0) * 1000
-        return AgentResult(calls, "".join(text), first or total, {"total_ms": total})
+        return AgentResult(calls, "".join(text), first or total, {"total_ms": total, "n_tool_calls": len(calls)})

@@ -4,7 +4,9 @@ books the table under the wrong name. A plugin that asks too often is penalized
 by the false-confirmation rate, so both must be reported together.
 
 Per field outcome:
-  before: correct | wrong | missing
+  before: correct | wrong | missing | asked
+          (asked = no value, but the agent asked the caller a question instead;
+           an extra turn, not an error, the same as the plugin confirming)
   after:  correct              right value, passed through
           corrected            was wrong, plugin fixed it silently
           caught               was wrong, plugin asked the caller to confirm
@@ -35,11 +37,19 @@ def field_kind(field: str) -> str:
     return {"phone": "phone", "order_id": "order_id"}.get(field, "name")
 
 
-def score_field(field: str, expected, before, after, action: str | None) -> tuple[str, str]:
+_ASK = re.compile(r"\?|\b(spell|repeat|say that again|confirm|one more time|didn'?t catch|could you)\b", re.I)
+
+
+def agent_asked(text: str | None) -> bool:
+    return bool(text) and bool(_ASK.search(str(text)))
+
+
+def score_field(field: str, expected, before, after, action: str | None,
+                agent_text: str | None = None) -> tuple[str, str]:
     k = field_kind(field)
     e, b, a = norm(k, expected), norm(k, before), norm(k, after)
     if not b:
-        return "missing", "missing"
+        return ("asked", "asked") if agent_asked(agent_text) else ("missing", "missing")
     before_o = "correct" if b == e else "wrong"
     if action == "confirm":
         return before_o, ("caught" if before_o == "wrong" else "false_confirm")
@@ -68,6 +78,7 @@ def summarize(rows: pd.DataFrame, by: str = "kind") -> pd.DataFrame:
             "false_confirm": (ao == "false_confirm").mean(),
             "broken": (ao == "broken").mean(),
             "missing": (bo == "missing").mean(),
+            "agent_asked": (bo == "asked").mean(),
             "cut_in": g["cut_in"].mean() if "cut_in" in g else 0.0,
             "agent_p50_ms": g["agent_ms"].median(),
             "agent_p95_ms": g["agent_ms"].quantile(0.95),

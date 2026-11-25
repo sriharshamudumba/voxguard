@@ -73,7 +73,7 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
     for f, exp in case.expected.items():
         v = by_field.get(f)
         b, a = call.args.get(f), guarded.tool_call.args.get(f)
-        before_o, after_o = score_field(f, exp, b, a, v.action.value if v else None)
+        before_o, after_o = score_field(f, exp, b, a, v.action.value if v else None, res.text)
         rows.append({
             "case_id": case.id, "kind": case.kind, "accent": case.accent or "unknown", "trial": trial,
             "field": f, "model": agent.name, "agent_kind": agent.kind,

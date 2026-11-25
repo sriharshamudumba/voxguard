@@ -17,6 +17,8 @@ def test_score_field_outcomes():
     assert score_field("phone", "6789320288", "6789320988", "6789320288", "correct") == ("wrong", "corrected")
     assert score_field("phone", "6789320288", "6789320288", "6789320288", "confirm") == ("correct", "false_confirm")
     assert score_field("name", "Jon Smith", None, None, None) == ("missing", "missing")
+    assert score_field("name", "Jon Smith", None, None, None, "Could you spell your last name?") == ("asked", "asked")
+    assert score_field("name", "Jon Smith", None, None, None, "Thanks, one moment.") == ("missing", "missing")
 
 
 def test_mock_benchmark_runs_and_improves():

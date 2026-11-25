@@ -27,7 +27,7 @@ st.set_page_config(page_title="voxguard", layout="wide")
 
 RUNS_DIR = "runs"
 PCT = ["before_error", "after_silent_error", "relative_reduction", "corrected", "caught", "false_confirm", "broken",
-       "missing", "cut_in"]
+       "missing", "agent_asked", "cut_in"]
 
 
 def fmt(df: pd.DataFrame) -> pd.DataFrame:

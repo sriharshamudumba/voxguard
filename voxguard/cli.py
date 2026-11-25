@@ -20,10 +20,10 @@ from .bench.runner import RunConfig, run_benchmark, save_run
 
 
 def _fmt(df: pd.DataFrame) -> str:
-    cols = ["model", "kind", "n", "errors", "missing", "cut_in", "before_error", "after_silent_error",
+    cols = ["model", "kind", "n", "errors", "missing", "agent_asked", "cut_in", "before_error", "after_silent_error",
             "relative_reduction", "caught", "corrected", "false_confirm", "agent_p50_ms", "guard_p95_ms"]
     d = df[[c for c in cols if c in df]].copy()
-    for c in ["missing", "cut_in", "before_error", "after_silent_error", "relative_reduction", "caught",
+    for c in ["missing", "agent_asked", "cut_in", "before_error", "after_silent_error", "relative_reduction", "caught",
               "corrected", "false_confirm"]:
         if c in d:
             d[c] = (d[c] * 100).round(1).astype(str) + "%"
