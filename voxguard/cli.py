@@ -20,10 +20,11 @@ from .bench.runner import RunConfig, run_benchmark, save_run
 
 
 def _fmt(df: pd.DataFrame) -> str:
-    cols = ["model", "kind", "n", "before_error", "after_silent_error", "relative_reduction",
-            "caught", "corrected", "false_confirm", "agent_p50_ms", "guard_p95_ms"]
+    cols = ["model", "kind", "n", "errors", "missing", "cut_in", "before_error", "after_silent_error",
+            "relative_reduction", "caught", "corrected", "false_confirm", "agent_p50_ms", "guard_p95_ms"]
     d = df[[c for c in cols if c in df]].copy()
-    for c in ["before_error", "after_silent_error", "relative_reduction", "caught", "corrected", "false_confirm"]:
+    for c in ["missing", "cut_in", "before_error", "after_silent_error", "relative_reduction", "caught",
+              "corrected", "false_confirm"]:
         if c in d:
             d[c] = (d[c] * 100).round(1).astype(str) + "%"
     for c in ["agent_p50_ms", "guard_p95_ms"]:
@@ -101,6 +102,11 @@ def main(argv=None) -> None:
                                "shadow": {k: v for k, v in cfg.get("shadow", {}).items() if "key" not in k}})
             print(f"\n{agent.name}  ->  {d}")
             print(_fmt(summ))
+            n_err = int(rows["agent_error"].notna().sum()) if not rows.empty else 0
+            if n_err:
+                first = rows["agent_error"].dropna().iloc[0]
+                print(f"WARNING: {n_err} of {len(rows)} rows failed. These are not model errors. First error:\n  "
+                      f"{str(first)[:300]}")
     elif a.cmd == "report":
         from .bench.report import build_report
         print(f"report written to {build_report(a.runs, a.out)}")

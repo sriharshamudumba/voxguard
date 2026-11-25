@@ -52,8 +52,21 @@ def test_vapi_call_record():
         {"role": "tool_calls", "secondsFromStart": 6.2,
          "toolCalls": [{"function": {"name": "record_details", "arguments": '{"phone": "6789320288"}'}}]},
     ]}}
-    calls, t = parse_call_record(rec)
-    assert calls[0].args["phone"] == "6789320288" and t == 6.2
+    calls, times = parse_call_record(rec)
+    assert calls[0].args["phone"] == "6789320288" and times == [6.2]
+
+
+def test_call_collector_merges_partial_calls_and_flags_cut_in():
+    from voxguard.backends.streaming import CallCollector
+    from voxguard.core.types import ToolCall
+    col = CallCollector()
+    col.add(ToolCall("record_details", {"phone": "888272"}))        # during speech
+    col.speech_ended()
+    col.add(ToolCall("record_details", {"phone": "8882722028", "name": ""}))
+    merged = col.merged()[0]
+    st = col.stats()
+    assert merged.args == {"phone": "8882722028"}
+    assert st["cut_in"] and st["n_tool_calls"] == 2 and st["latency_ms"] >= 0
 
 
 def test_pcm_chunks_cover_audio():

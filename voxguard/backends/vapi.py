@@ -26,16 +26,16 @@ import httpx
 
 from ..core.types import ToolCall
 from .base import AgentBackend, AgentResult, TurnInput
-from .streaming import stream_turn
+from .streaming import CallCollector, stream_turn
 
 API = "https://api.vapi.ai"
 
 
-def parse_call_record(call: dict) -> tuple[list[ToolCall], float | None]:
-    """Extract tool calls and the seconds-from-start of the first one."""
+def parse_call_record(call: dict) -> tuple[list[ToolCall], list[float]]:
+    """Extract tool calls in order, and the seconds-from-start of each tool_calls message."""
     msgs = (call.get("artifact") or {}).get("messages") or call.get("messages") or []
     out: list[ToolCall] = []
-    first_t = None
+    times: list[float] = []
     for m in msgs:
         if m.get("role") != "tool_calls":
             continue
@@ -47,9 +47,9 @@ def parse_call_record(call: dict) -> tuple[list[ToolCall], float | None]:
             except json.JSONDecodeError:
                 args = {"_unparsed": raw}
             out.append(ToolCall(fn.get("name", ""), args))
-        if first_t is None and m.get("secondsFromStart") is not None:
-            first_t = float(m["secondsFromStart"])
-    return out, first_t
+        if m.get("secondsFromStart") is not None:
+            times.append(float(m["secondsFromStart"]))
+    return out, times
 
 
 class VapiBackend(AgentBackend):
@@ -81,28 +81,33 @@ class VapiBackend(AgentBackend):
                 call_id = call["id"]
                 ws_url = call["transport"]["websocketCallUrl"]
 
-                done = asyncio.Event()
                 async with websockets.connect(ws_url, max_size=None) as ws:
                     async def drain():
                         async for _ in ws:
                             pass  # agent audio and control messages; not needed
                     dtask = asyncio.create_task(drain())
-                    asyncio.get_running_loop().call_later(speech_s + self.wait_s, done.set)
-                    await stream_turn(ws.send, turn.audio, turn.sr, 16000, done, pace=self.pace,
+                    # tool calls are read from the call record afterwards, so just stream and wait
+                    await stream_turn(ws.send, turn.audio, turn.sr, 16000, CallCollector(), pace=self.pace,
                                       max_silence_s=self.wait_s)
                     await ws.send(json.dumps({"type": "end-call"}))
                     dtask.cancel()
 
                 calls: list[ToolCall] = []
-                first_t = None
+                times: list[float] = []
                 for _ in range(10):   # call record finalizes asynchronously
                     await asyncio.sleep(1.5)
                     rec = (await c.get(f"{API}/call/{call_id}", headers=hdr)).json()
-                    calls, first_t = parse_call_record(rec)
+                    calls, times = parse_call_record(rec)
                     if calls or rec.get("status") == "ended":
                         break
         except Exception as e:
             return AgentResult([], latency_ms=(time.perf_counter() - t0) * 1000, error=repr(e))
-        # secondsFromStart is relative to call start; subtract speech duration for turn latency
-        lat = max(0.0, (first_t - speech_s) * 1000) if first_t is not None else float("nan")
-        return AgentResult(calls, "", lat, {"call_id": call_id, "latency_source": "call_record"})
+        col = CallCollector()
+        for call in calls:
+            col.calls.append((0.0, call))
+        merged = col.merged()
+        # secondsFromStart is relative to call start; compare with speech duration
+        cut_in = bool(times) and times[0] < speech_s
+        lat = (times[-1] - speech_s) * 1000 if times and times[-1] >= speech_s else float("nan")
+        return AgentResult(merged, "", lat, {"call_id": call_id, "cut_in": cut_in, "n_tool_calls": len(calls),
+                                             "latency_source": "call_record"})

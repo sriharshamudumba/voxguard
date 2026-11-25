@@ -24,7 +24,7 @@ import httpx
 
 from ..core.types import ToolCall
 from .base import AgentBackend, AgentResult, TurnInput
-from .streaming import stream_turn
+from .streaming import CallCollector, stream_turn
 
 WS = "wss://api.elevenlabs.io/v1/convai/conversation"
 
@@ -74,11 +74,9 @@ class ElevenLabsAgentBackend(AgentBackend):
 
     async def run_turn(self, turn: TurnInput) -> AgentResult:
         import websockets
-        calls: list = []
+        col = CallCollector()
         text: list[str] = []
-        done = asyncio.Event()
         t0 = time.perf_counter()
-        t_call = None
         try:
             url = await self._url()
             async with websockets.connect(url, max_size=None) as ws:
@@ -93,7 +91,6 @@ class ElevenLabsAgentBackend(AgentBackend):
                         await ws.send(json.dumps({"type": "pong", "event_id": j.get("ping_event", {}).get("event_id")}))
 
                 async def reader():
-                    nonlocal t_call
                     async for m in ws:
                         j = json.loads(m)
                         t = j.get("type")
@@ -104,22 +101,19 @@ class ElevenLabsAgentBackend(AgentBackend):
                             text.append((j.get("agent_response_event") or {}).get("agent_response", ""))
                         call = parse_client_tool_call(j)
                         if call:
-                            calls.append(call)
-                            t_call = time.perf_counter()
-                            done.set()
-                            return
+                            col.add(call)
+                            tid = (j.get("client_tool_call") or {}).get("tool_call_id")
+                            await ws.send(json.dumps({"type": "client_tool_result", "tool_call_id": tid,
+                                                      "result": "recorded", "is_error": False}))
 
                 async def send(chunk: bytes):
                     await ws.send(json.dumps({"user_audio_chunk": base64.b64encode(chunk).decode()}))
 
                 rtask = asyncio.create_task(reader())
-                t_end = await stream_turn(send, turn.audio, turn.sr, rate, done, pace=self.pace,
-                                          max_silence_s=self.timeout / 3)
-                try:
-                    await asyncio.wait_for(rtask, timeout=5)
-                except TimeoutError:
-                    rtask.cancel()
+                await stream_turn(send, turn.audio, turn.sr, rate, col, pace=self.pace,
+                                  max_silence_s=self.timeout / 3)
+                rtask.cancel()
         except Exception as e:
-            return AgentResult(calls, "".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
-        lat = (t_call - t_end) * 1000 if t_call else (time.perf_counter() - t0) * 1000
-        return AgentResult(calls, " ".join(text), lat, {"turn_latency": True})
+            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
+        st = col.stats()
+        return AgentResult(col.merged(), " ".join(text), st["latency_ms"], st)

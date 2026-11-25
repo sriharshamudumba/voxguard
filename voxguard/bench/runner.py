@@ -82,6 +82,8 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
             "reason": v.reason if v else "", "before": before_o, "after": after_o,
             "shadow_text": st.text if st else None, "agent_ms": res.latency_ms, "shadow_ms": shadow_ms,
             "guard_ms": guard_ms, "agent_error": res.error, "caller_text": case.caller_text,
+            "cut_in": bool(res.raw.get("cut_in", False)), "n_tool_calls": res.raw.get("n_tool_calls"),
+            "agent_text": res.text,
         })
     return rows
 

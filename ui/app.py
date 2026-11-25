@@ -26,7 +26,8 @@ from voxguard.numbers import NumberGuard
 st.set_page_config(page_title="voxguard", layout="wide")
 
 RUNS_DIR = "runs"
-PCT = ["before_error", "after_silent_error", "relative_reduction", "corrected", "caught", "false_confirm", "broken"]
+PCT = ["before_error", "after_silent_error", "relative_reduction", "corrected", "caught", "false_confirm", "broken",
+       "missing", "cut_in"]
 
 
 def fmt(df: pd.DataFrame) -> pd.DataFrame:

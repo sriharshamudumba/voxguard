@@ -18,7 +18,7 @@ from ..core.plugin import VoicePlugin
 from ..core.text import is_subsequence, levenshtein
 from ..core.types import Action, ToolCall, TurnContext, Verdict
 from .channel import DigitChannelDecoder
-from .spoken import extract_digit_runs, only_digits
+from .spoken import extract_digit_runs, only_digits, words_to_digits
 from .validate import VALIDATORS, expected_length
 
 
@@ -60,6 +60,18 @@ class NumberGuard(VoicePlugin):
         return out
 
     def _check_field(self, fname: str, kind: str, raw, ctx: TurnContext) -> Verdict:
+        """Models sometimes write digits as words ("eight eight eight"). Convert first;
+        if the converted value then passes, return it as a correction."""
+        spelled = any(ch.isalpha() for ch in str(raw))
+        v = self._check_digits(fname, kind, words_to_digits(str(raw)) if spelled else raw, ctx)
+        if spelled and v.action == Action.PASS:
+            return Verdict(fname, Action.CORRECT, raw, v.value, v.p_error,
+                           "number words converted to digits; " + v.reason)
+        if spelled:
+            v.original = raw
+        return v
+
+    def _check_digits(self, fname: str, kind: str, raw, ctx: TurnContext) -> Verdict:
         cost = self.costs.get(kind, self.costs["number"])
         valid = VALIDATORS.get(kind, VALIDATORS["number"])
         m = only_digits(raw)

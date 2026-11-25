@@ -67,6 +67,8 @@ def summarize(rows: pd.DataFrame, by: str = "kind") -> pd.DataFrame:
             "caught": (ao == "caught").mean(),
             "false_confirm": (ao == "false_confirm").mean(),
             "broken": (ao == "broken").mean(),
+            "missing": (bo == "missing").mean(),
+            "cut_in": g["cut_in"].mean() if "cut_in" in g else 0.0,
             "agent_p50_ms": g["agent_ms"].median(),
             "agent_p95_ms": g["agent_ms"].quantile(0.95),
             "guard_p95_ms": g["guard_ms"].quantile(0.95),

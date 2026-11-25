@@ -20,7 +20,7 @@ import time
 
 from ..core.types import ToolCall
 from .base import AgentBackend, AgentResult, TurnInput
-from .streaming import stream_turn
+from .streaming import CallCollector, stream_turn
 
 URL = "wss://agent.deepgram.com/v1/agent/converse"
 
@@ -78,11 +78,9 @@ class DeepgramAgentBackend(AgentBackend):
 
     async def run_turn(self, turn: TurnInput) -> AgentResult:
         import websockets
-        calls: list = []
+        col = CallCollector()
         text: list[str] = []
-        done = asyncio.Event()
         t0 = time.perf_counter()
-        t_call = None
         try:
             async with websockets.connect(self.url, additional_headers={"Authorization": f"Token {self.api_key}"},
                                           max_size=None) as ws:
@@ -97,7 +95,6 @@ class DeepgramAgentBackend(AgentBackend):
                             return AgentResult([], error=json.dumps(j))
 
                 async def reader():
-                    nonlocal t_call
                     async for m in ws:
                         if not isinstance(m, str):
                             continue  # agent audio
@@ -106,23 +103,18 @@ class DeepgramAgentBackend(AgentBackend):
                             text.append(j.get("content", ""))
                         elif j.get("type") == "Error":
                             text.append("ERROR " + json.dumps(j))
-                            done.set()
-                            return
-                        found = parse_function_calls(j)
-                        if found:
-                            calls.extend(found)
-                            t_call = time.perf_counter()
-                            done.set()
-                            return
+                        if j.get("type") == "FunctionCallRequest":
+                            for f, call in zip(j.get("functions", []), parse_function_calls(j)):
+                                col.add(call)
+                                # answer so the agent can keep listening and call again if needed
+                                await ws.send(json.dumps({"type": "FunctionCallResponse", "id": f.get("id"),
+                                                          "name": f.get("name"), "content": "recorded"}))
 
                 rtask = asyncio.create_task(reader())
-                t_end = await stream_turn(ws.send, turn.audio, turn.sr, 16000, done, pace=self.pace,
-                                          max_silence_s=self.timeout / 3)
-                try:
-                    await asyncio.wait_for(rtask, timeout=5)
-                except TimeoutError:
-                    rtask.cancel()
+                await stream_turn(ws.send, turn.audio, turn.sr, 16000, col, pace=self.pace,
+                                  max_silence_s=self.timeout / 3)
+                rtask.cancel()
         except Exception as e:
-            return AgentResult(calls, "".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
-        lat = (t_call - t_end) * 1000 if t_call else (time.perf_counter() - t0) * 1000
-        return AgentResult(calls, " ".join(text), lat, {"turn_latency": True})
+            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
+        st = col.stats()
+        return AgentResult(col.merged(), " ".join(text), st["latency_ms"], st)

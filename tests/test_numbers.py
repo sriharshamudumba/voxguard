@@ -62,3 +62,10 @@ def test_channel_decoder_prefers_valid():
     dec = DigitChannelDecoder()
     ranked = dec.decode("1789320288", valid=us_phone)
     assert ranked and us_phone(ranked[0][0])
+
+
+def test_number_words_in_tool_args_are_converted():
+    g = NumberGuard()
+    v = g.check_tool_call(ToolCall("x", {"phone": "six seven eight nine three two zero two eight eight"}),
+                          _ctx("six seven eight, nine three two, zero two eight eight"))[0]
+    assert v.action == Action.CORRECT and v.value == "6789320288"

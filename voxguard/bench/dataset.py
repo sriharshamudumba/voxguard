@@ -17,9 +17,10 @@ from ..pronunciation.normalizer import int_to_words
 from .names_data import FIRST_TIME_NAMES, NAMES
 
 SYSTEM_PROMPT = (
-    "You are the phone agent for a restaurant. As soon as the caller gives their name, phone number, "
-    "or order number, call record_details with exactly what they said. Never guess or fill in missing "
-    "digits. Do not ask follow-up questions in this turn."
+    "You are the phone agent for a restaurant. When the caller has finished giving their name, phone number, "
+    "or order number, call record_details once with exactly what they said. Write numbers as digits. "
+    "Never guess or fill in missing digits. If the caller is still speaking a value, wait. "
+    "Do not ask follow-up questions in this turn."
 )
 
 TOOLS = [{
