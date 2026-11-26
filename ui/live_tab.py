@@ -104,6 +104,7 @@ def render() -> None:
     st.write("Play a sample call or record your own, choose models, and see what your backend would "
              "receive without and with voxguard.")
 
+    hosted = bool(demo_pw)
     unlocked = False
     if demo_pw:
         code = st.text_input("Demo passcode (unlocks the hosted keys)", type="password", key="demo_code")
@@ -119,7 +120,11 @@ def render() -> None:
     def key_for(env: str | None) -> str | None:
         if env is None:
             return None
-        return user_keys.get(env) or (secrets.get(env) if unlocked else None) or os.environ.get(env) or None
+        if user_keys.get(env):
+            return user_keys[env]
+        if hosted:  # Streamlit Cloud also exposes secrets as environment variables: passcode only
+            return secrets.get(env) if unlocked else None
+        return os.environ.get(env) or None
 
     available = [k for k, (_, env) in PRESETS.items() if env is None or key_for(env)]
     chosen = st.multiselect("Models", available,

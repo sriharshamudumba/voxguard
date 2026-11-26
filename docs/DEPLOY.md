@@ -20,6 +20,7 @@ Listen to a few files in `demo/samples/` before publishing. Sample voices are sy
 
 1. Go to share.streamlit.io and sign in with GitHub.
 2. Create app: repository `sriharshamudumba/voxguard`, branch `main`, main file `ui/app.py`.
+   In Advanced settings choose Python 3.12.
 3. Advanced settings, Secrets: paste the contents of `.streamlit/secrets.toml.example` with
    your values filled in. Choose a `DEMO_PASSWORD` to share only with people you invite.
 4. Deploy.
@@ -32,6 +33,7 @@ Listen to a few files in `demo/samples/` before publishing. Sample voices are sy
 | `DEMO_SESSION_LIMIT` and `DEMO_DAILY_LIMIT` cap usage | A shared passcode cannot run up a large bill |
 | Keys are passed to providers per request, never put in environment variables | Streamlit serves many visitors from one process; environment variables would be shared between them |
 | Visitors can paste their own keys instead | Those are used for their request only |
+| With `DEMO_PASSWORD` set, the app never falls back to environment variables, and the Run tab is off | Streamlit Cloud also exposes secrets as environment variables, so a fallback would bypass the passcode |
 
 Rotate any key you put in Secrets if the passcode leaks, and set spending limits in each
 provider's dashboard as a second line of defense.
