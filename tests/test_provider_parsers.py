@@ -81,3 +81,13 @@ def test_registry_builds_every_type():
     for t in AGENT_TYPES:
         agent = build_agent({"type": t, **cfgs.get(t, {})})
         assert agent.name
+
+
+def test_deepgram_flux_listen_settings():
+    from voxguard.backends.deepgram_agent import DeepgramAgentBackend
+
+    nova = DeepgramAgentBackend(listen_model="nova-3", api_key="x").listen_provider()
+    assert nova == {"type": "deepgram", "model": "nova-3", "smart_format": False}
+    flux = DeepgramAgentBackend(listen_model="flux-general-en", api_key="x",
+                                listen_options={"eot_threshold": 0.9, "eot_timeout_ms": 5000}).listen_provider()
+    assert flux["version"] == "v2" and flux["eot_threshold"] == 0.9 and "smart_format" not in flux

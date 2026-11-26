@@ -45,8 +45,13 @@ class DeepgramAgentBackend(AgentBackend):
     def __init__(self, listen_model: str = "nova-3", think_provider: str = "open_ai",
                  think_model: str = "gpt-4o-mini", speak_model: str = "aura-2-thalia-en",
                  api_key: str | None = None, api_key_env: str = "DEEPGRAM_API_KEY",
-                 url: str = URL, timeout: float = 30, pace: bool = True, name: str | None = None):
+                 url: str = URL, timeout: float = 30, pace: bool = True, name: str | None = None,
+                 listen_version: str | None = None, listen_options: dict | None = None):
         self.listen_model = listen_model
+        # Flux models use the v2 listen API, which owns end-of-turn detection
+        # (eot_threshold, eot_timeout_ms, eager_eot_threshold).
+        self.listen_version = listen_version or ("v2" if listen_model.startswith("flux") else None)
+        self.listen_options = dict(listen_options or {})
         self.think_provider = think_provider
         self.think_model = think_model
         self.speak_model = speak_model
@@ -55,6 +60,15 @@ class DeepgramAgentBackend(AgentBackend):
         self.timeout = timeout
         self.pace = pace
         self.name = name or f"deepgram_agent:{listen_model}+{think_model}"
+
+    def listen_provider(self) -> dict:
+        provider: dict = {"type": "deepgram", "model": self.listen_model}
+        if self.listen_version:
+            provider["version"] = self.listen_version
+        else:
+            provider["smart_format"] = False
+        provider.update(self.listen_options)
+        return provider
 
     def settings(self, turn: TurnInput) -> dict:
         return {
@@ -65,7 +79,7 @@ class DeepgramAgentBackend(AgentBackend):
             },
             "agent": {
                 "language": "en",
-                "listen": {"provider": {"type": "deepgram", "model": self.listen_model, "smart_format": False}},
+                "listen": {"provider": self.listen_provider()},
                 "think": {
                     "provider": {"type": self.think_provider, "model": self.think_model, "temperature": 0},
                     "prompt": turn.system_prompt,

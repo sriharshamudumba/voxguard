@@ -1,0 +1,36 @@
+# Deepgram endpointing control: is the fragment problem a default setting or the model?
+# Same cases as the main run, three listen setups.
+#   source .env
+#   voxguard bench --config configs/deepgram_endpointing.toml
+
+[data]
+cases = "data/cases.jsonl"
+
+[run]
+repeats = 1
+concurrency = 1
+use_keyterms = true
+out_dir = "runs"
+
+[shadow]
+type = "deepgram"
+model = "nova-3"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Nova-3 (default endpointing)"
+listen_model = "nova-3"
+think_model = "gpt-4o-mini"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Flux (default EOT)"
+listen_model = "flux-general-en"
+think_model = "gpt-4o-mini"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Flux (tuned EOT 0.9, 5s)"
+listen_model = "flux-general-en"
+think_model = "gpt-4o-mini"
+listen_options = { eot_threshold = 0.9, eot_timeout_ms = 5000 }

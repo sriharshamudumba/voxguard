@@ -69,6 +69,8 @@ def build_agent(cfg: dict[str, Any]) -> AgentBackend:
         return DeepgramAgentBackend(listen_model=cfg.get("listen_model", "nova-3"),
                                     think_provider=cfg.get("think_provider", "open_ai"),
                                     think_model=cfg.get("think_model", "gpt-4o-mini"),
+                                    listen_version=cfg.get("listen_version"),
+                                    listen_options=cfg.get("listen_options"),
                                     api_key=cfg.get("api_key"), name=name)
     if t == "assemblyai_agent":
         from .assemblyai_agent import AssemblyAIAgentBackend
