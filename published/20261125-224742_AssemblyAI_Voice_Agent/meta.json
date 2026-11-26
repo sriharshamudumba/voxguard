@@ -1,0 +1,10 @@
+{
+  "agent": {
+    "type": "assemblyai_agent",
+    "name": "AssemblyAI Voice Agent"
+  },
+  "shadow": {
+    "type": "deepgram",
+    "model": "nova-3"
+  }
+}

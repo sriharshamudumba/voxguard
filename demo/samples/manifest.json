@@ -1,0 +1,154 @@
+[
+  {
+    "file": "phone-0000__nigerian.wav",
+    "label": "Phone number, nigerian accent",
+    "text": "Yeah my number is seven one nine, two zero nine, eighty seven double nine.",
+    "accent": "nigerian",
+    "truth": {
+      "phone": "7192098799"
+    },
+    "roster": [],
+    "order_ids": [],
+    "models_wrong_in_benchmark": 6
+  },
+  {
+    "file": "phone-0001__scottish.wav",
+    "label": "Phone number, scottish accent",
+    "text": "Yeah my number is eight eight eight, two seven two, two zero twenty eight.",
+    "accent": "scottish",
+    "truth": {
+      "phone": "8882722028"
+    },
+    "roster": [],
+    "order_ids": [],
+    "models_wrong_in_benchmark": 6
+  },
+  {
+    "file": "order_id-0004__scottish.wav",
+    "label": "Order ID, scottish accent",
+    "text": "It is order double seven six, one twenty two, two zero.",
+    "accent": "scottish",
+    "truth": {
+      "order_id": "77612220"
+    },
+    "roster": [],
+    "order_ids": [
+      "77612220",
+      "52882001",
+      "82633043",
+      "48395486",
+      "20579868",
+      "28288072"
+    ],
+    "models_wrong_in_benchmark": 7
+  },
+  {
+    "file": "order_id-0004__us.wav",
+    "label": "Order ID, us accent",
+    "text": "It is order double seven six, one twenty two, two zero.",
+    "accent": "us",
+    "truth": {
+      "order_id": "77612220"
+    },
+    "roster": [],
+    "order_ids": [
+      "77612220",
+      "52882001",
+      "82633043",
+      "48395486",
+      "20579868",
+      "28288072"
+    ],
+    "models_wrong_in_benchmark": 6
+  },
+  {
+    "file": "name-0002__us.wav",
+    "label": "Name on the booking list, us accent",
+    "text": "The name is Ewa Kowalczyk.",
+    "accent": "us",
+    "truth": {
+      "name": "Ewa Kowalczyk"
+    },
+    "roster": [
+      "Aoife Byrne",
+      "Thandiwe Ndlovu",
+      "Ewa Kowalczyk",
+      "Saoirse Kelly",
+      "Siddharth Rao",
+      "Ines Duarte",
+      "Fahad Rahman",
+      "Nguyen Tran",
+      "Xiaoming Chen",
+      "Niamh Walsh"
+    ],
+    "order_ids": [],
+    "models_wrong_in_benchmark": 10
+  },
+  {
+    "file": "name-0002__indian.wav",
+    "label": "Name on the booking list, indian accent",
+    "text": "The name is Ewa Kowalczyk.",
+    "accent": "indian",
+    "truth": {
+      "name": "Ewa Kowalczyk"
+    },
+    "roster": [
+      "Aoife Byrne",
+      "Thandiwe Ndlovu",
+      "Ewa Kowalczyk",
+      "Saoirse Kelly",
+      "Siddharth Rao",
+      "Ines Duarte",
+      "Fahad Rahman",
+      "Nguyen Tran",
+      "Xiaoming Chen",
+      "Niamh Walsh"
+    ],
+    "order_ids": [],
+    "models_wrong_in_benchmark": 10
+  },
+  {
+    "file": "name_new-0002__us.wav",
+    "label": "First-time caller name, us accent",
+    "text": "This is Tadhg Brennan.",
+    "accent": "us",
+    "truth": {
+      "name": "Tadhg Brennan"
+    },
+    "roster": [
+      "Siobhan Murphy",
+      "Xiaoming Chen",
+      "Catherine Lee",
+      "Thandiwe Ndlovu",
+      "Joaquin Ortiz",
+      "Subramaniam Iyer",
+      "Aoife Byrne",
+      "Sean O'Brien",
+      "Fahad Rahman"
+    ],
+    "order_ids": [],
+    "models_wrong_in_benchmark": 10
+  },
+  {
+    "file": "name_new-0002__indian.wav",
+    "label": "First-time caller name, indian accent",
+    "text": "This is Tadhg Brennan.",
+    "accent": "indian",
+    "truth": {
+      "name": "Tadhg Brennan"
+    },
+    "roster": [
+      "Siobhan Murphy",
+      "Xiaoming Chen",
+      "Catherine Lee",
+      "Thandiwe Ndlovu",
+      "Joaquin Ortiz",
+      "Subramaniam Iyer",
+      "Aoife Byrne",
+      "Sean O'Brien",
+      "Fahad Rahman"
+    ],
+    "order_ids": [],
+    "models_wrong_in_benchmark": 10
+  }
+]

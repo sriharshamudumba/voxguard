@@ -1,0 +1,12 @@
+{
+  "agent": {
+    "type": "deepgram_agent",
+    "name": "Deepgram Nova-3 (default endpointing)",
+    "listen_model": "nova-3",
+    "think_model": "gpt-4o-mini"
+  },
+  "shadow": {
+    "type": "deepgram",
+    "model": "nova-3"
+  }
+}

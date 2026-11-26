@@ -1,0 +1,16 @@
+{
+  "agent": {
+    "type": "deepgram_agent",
+    "name": "Deepgram Flux (tuned EOT 0.9, 5s)",
+    "listen_model": "flux-general-en",
+    "think_model": "gpt-4o-mini",
+    "listen_options": {
+      "eot_threshold": 0.9,
+      "eot_timeout_ms": 5000
+    }
+  },
+  "shadow": {
+    "type": "deepgram",
+    "model": "nova-3"
+  }
+}

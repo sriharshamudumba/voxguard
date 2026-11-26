@@ -1,0 +1,11 @@
+{
+  "agent": {
+    "type": "openai_realtime",
+    "name": "OpenAI gpt-realtime",
+    "model": "gpt-realtime"
+  },
+  "shadow": {
+    "type": "deepgram",
+    "model": "nova-3"
+  }
+}

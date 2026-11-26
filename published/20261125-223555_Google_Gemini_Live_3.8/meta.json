@@ -1,0 +1,12 @@
+{
+  "agent": {
+    "type": "gemini_live",
+    "name": "Google Gemini Live 3.8",
+    "model": "gemini-3.8-live",
+    "response_modality": "AUDIO"
+  },
+  "shadow": {
+    "type": "deepgram",
+    "model": "nova-3"
+  }
+}

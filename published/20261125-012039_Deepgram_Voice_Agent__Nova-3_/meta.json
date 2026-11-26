@@ -1,0 +1,12 @@
+{
+  "agent": {
+    "type": "deepgram_agent",
+    "name": "Deepgram Voice Agent (Nova-3)",
+    "listen_model": "nova-3",
+    "think_model": "gpt-4o-mini"
+  },
+  "shadow": {
+    "type": "deepgram",
+    "model": "nova-3"
+  }
+}

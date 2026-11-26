@@ -1,0 +1,6 @@
+model,kind,n,before_error,after_silent_error,relative_reduction,corrected,caught,false_confirm,broken,missing,agent_asked,cut_in,agent_p50_ms,agent_p95_ms,guard_p95_ms,errors
+Deepgram Nova-3 (default endpointing),name,20,0.7,0.0,1.0,0.7,0.0,0.0,0.0,0.0,0.0,0.35,418.6510060026194,2113.573656999506,4.461010500017437,0
+Deepgram Nova-3 (default endpointing),name_new,20,0.5,0.25,0.5,0.0,0.25,0.2,0.0,0.0,0.0,0.4,323.3889610055485,562.1941865989355,4.490135554442532,0
+Deepgram Nova-3 (default endpointing),order_id,20,0.95,0.05,0.9473684210526315,0.9,0.0,0.0,0.0,0.05,0.0,0.9,560.7182044986985,1313.550196696815,1.6247971969278387,0
+Deepgram Nova-3 (default endpointing),phone,20,1.0,0.25,0.75,0.55,0.2,0.0,0.0,0.25,0.0,1.0,372.38394250016427,987.7284899022923,2.7268782527244233,0
+Deepgram Nova-3 (default endpointing),all,80,0.7875,0.1375,0.8253968253968254,0.5375,0.1125,0.05,0.0,0.075,0.0,0.6625,428.97785500099417,1103.6413941983478,4.477725754259152,0
