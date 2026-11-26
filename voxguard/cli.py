@@ -5,6 +5,8 @@
   voxguard bench  --config configs/example.toml
   voxguard vad    --cases data/cases.jsonl
   voxguard report --runs runs --out report
+  voxguard samples   (pick demo calls for the Live tab)
+  voxguard publish   (copy the latest runs into published/ for the hosted demo)
 """
 from __future__ import annotations
 
@@ -33,6 +35,73 @@ def _fmt(df: pd.DataFrame) -> str:
     return d.to_string(index=False)
 
 
+KIND_LABEL = {"phone": "Phone number", "order_id": "Order ID", "name": "Name on the booking list",
+              "name_new": "First-time caller name"}
+
+
+def make_samples(cases_path: str, out: str, per_kind: int, runs_dir: str | None) -> str:
+    """Copy a few benchmark calls (audio + ground truth) into demo/samples with a manifest."""
+    import json
+    import shutil
+    from pathlib import Path
+
+    from .bench.runner import load_runs
+
+    cases = [c for c in load_cases(cases_path) if c.audio_path and Path(c.audio_path).exists()]
+    if not cases:
+        return "no cases with audio; run `voxguard synth` first"
+    hard: dict[str, int] = {}
+    if runs_dir and Path(runs_dir).exists():
+        runs = load_runs(runs_dir)
+        if not runs.empty:
+            bad = runs[runs["before"].isin(["wrong", "missing"])]
+            hard = bad.groupby("case_id").size().to_dict()
+    out_dir = Path(out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = []
+    for kind in ["phone", "order_id", "name", "name_new"]:
+        pool = sorted([c for c in cases if c.kind == kind], key=lambda c: -hard.get(c.id, 0))
+        seen_accents: set[str] = set()
+        picked = []
+        for c in pool:          # prefer different accents among the hardest calls
+            if len(picked) >= per_kind:
+                break
+            if c.accent in seen_accents and len(pool) > per_kind:
+                continue
+            picked.append(c)
+            seen_accents.add(c.accent)
+        for c in picked:
+            fname = f"{c.id}.wav"
+            shutil.copy(c.audio_path, out_dir / fname)
+            manifest.append({
+                "file": fname, "label": f"{KIND_LABEL[kind]}, {c.accent or 'mixed'} accent",
+                "text": c.caller_text, "accent": c.accent, "truth": c.expected,
+                "roster": c.roster, "order_ids": c.known_values.get("order_id", []),
+                "models_wrong_in_benchmark": int(hard.get(c.id, 0)),
+            })
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    return f"wrote {len(manifest)} samples to {out_dir}"
+
+
+def publish_runs(runs_dir: str, out: str) -> str:
+    """Latest run per model, copied so it can be committed for the hosted demo."""
+    import shutil
+    from pathlib import Path
+
+    from .bench.runner import load_runs
+
+    runs = load_runs(runs_dir)
+    if runs.empty:
+        return f"no runs in {runs_dir}"
+    latest = runs.groupby("model")["run"].max().tolist()
+    out_dir = Path(out)
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    for r in latest:
+        shutil.copytree(Path(runs_dir) / r, out_dir / r)
+    return f"published {len(latest)} runs to {out_dir}: " + ", ".join(latest)
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="voxguard")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -59,6 +128,17 @@ def main(argv=None) -> None:
     r = sub.add_parser("report", help="charts and markdown summary from saved runs")
     r.add_argument("--runs", default="runs")
     r.add_argument("--out", default="report")
+
+    sp = sub.add_parser("samples", help="pick benchmark calls as demo samples for the Live tab")
+    sp.add_argument("--cases", default="data/cases.jsonl")
+    sp.add_argument("--out", default="demo/samples")
+    sp.add_argument("--per-kind", type=int, default=2)
+    sp.add_argument("--from-runs", default="runs",
+                    help="prefer calls that some model got wrong in these runs")
+
+    pb = sub.add_parser("publish", help="copy the latest run per model into published/ for the hosted demo")
+    pb.add_argument("--runs", default="runs")
+    pb.add_argument("--out", default="published")
 
     v = sub.add_parser("vad", help="offline endpointing benchmark")
     v.add_argument("--cases", default=None)
@@ -110,6 +190,10 @@ def main(argv=None) -> None:
     elif a.cmd == "report":
         from .bench.report import build_report
         print(f"report written to {build_report(a.runs, a.out)}")
+    elif a.cmd == "samples":
+        print(make_samples(a.cases, a.out, a.per_kind, a.from_runs))
+    elif a.cmd == "publish":
+        print(publish_runs(a.runs, a.out))
     elif a.cmd == "vad":
         from .bench.vad_sim import simulate, summarize_vad
         from .vad import EntityAwareEndpointer, FixedEndpointer

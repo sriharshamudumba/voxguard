@@ -61,127 +61,8 @@ tab_live, tab_run, tab_results, tab_vad = st.tabs(["Live", "Run", "Results", "En
 
 # --------------------------------------------------------------------------- Live
 with tab_live:
-    import os
-
-    from voxguard.backends.audio import wav_bytes
-    from voxguard.live import FIELDS, asked, compare, decode_wav
-
-    st.write("Say one caller turn the way you would on a phone call, pick models, and compare what each "
-             "model recorded before and after the plugins.")
-    st.caption("Try: \"My number is six one seven, five five five, oh one double eight.\"  "
-               "or \"The reservation is under Siobhan Murphy.\"  or \"Order number four two nine, one seven three.\"")
-
-    with st.expander("Use your own API keys (used only for this request, never stored)"):
-        st.caption("Keys entered here are passed directly to the provider for this session. They are not "
-                   "saved to disk, written to environment variables, or logged.")
-        k1, k2, k3 = st.columns(3)
-        user_keys = {
-            "OPENAI_API_KEY": k1.text_input("OpenAI", type="password", key="uk_openai"),
-            "GEMINI_API_KEY": k2.text_input("Gemini", type="password", key="uk_gemini"),
-            "DEEPGRAM_API_KEY": k3.text_input("Deepgram", type="password", key="uk_dg"),
-            "ASSEMBLYAI_API_KEY": k1.text_input("AssemblyAI", type="password", key="uk_aai"),
-            "ELEVENLABS_API_KEY": k2.text_input("ElevenLabs", type="password", key="uk_el"),
-            "VAPI_API_KEY": k3.text_input("Vapi", type="password", key="uk_vapi"),
-        }
-
-    def has(env: str) -> bool:
-        return bool(user_keys.get(env) or os.environ.get(env))
-
-    PRESETS = {
-        "OpenAI gpt-realtime": ({"type": "openai_realtime", "model": "gpt-realtime"}, "OPENAI_API_KEY"),
-        "Google Gemini Live 3.8": ({"type": "gemini_live", "model": "gemini-3.8-live",
-                                    "response_modality": "AUDIO"}, "GEMINI_API_KEY"),
-        "Deepgram Voice Agent": ({"type": "deepgram_agent", "think_model": "gpt-4o-mini"}, "DEEPGRAM_API_KEY"),
-        "AssemblyAI Voice Agent": ({"type": "assemblyai_agent"}, "ASSEMBLYAI_API_KEY"),
-        "ElevenLabs Agents": ({"type": "elevenlabs_agent"}, "ELEVENLABS_API_KEY"),
-        "Vapi": ({"type": "vapi"}, "VAPI_API_KEY"),
-        "Simulated (no key)": ({"type": "mock", "profile": "sts_typical"}, None),
-    }
-    available = [k for k, (_, env) in PRESETS.items() if env is None or has(env)]
-    missing_keys = [k for k, (_, env) in PRESETS.items() if env and not has(env)]
-    chosen = st.multiselect("Models", available, default=[m for m in available if m != "Simulated (no key)"][:3])
-    if missing_keys:
-        st.caption("No API key found for: " + ", ".join(missing_keys) + ". Add keys to .env to enable them.")
-    i1, i2 = st.columns(2)
-    el_id = i1.text_input("ElevenLabs agent ID", key="live_el") if "ElevenLabs Agents" in chosen else ""
-    vapi_id = i2.text_input("Vapi assistant ID", key="live_vapi") if "Vapi" in chosen else ""
-
-    c1, c2 = st.columns(2)
-    roster_txt = c1.text_area("Known names (one per line, e.g. tonight's bookings)",
-                              "Siobhan Murphy\nAoife Byrne\nYusuf Demir\nEwa Kowalczyk\nJon Smith", height=120)
-    orders_txt = c2.text_area("Known order IDs (one per line, optional)", "", height=120)
-    phone_line = st.checkbox("Pass my audio through a simulated phone line (8 kHz, 300 to 3400 Hz)", True)
-    with st.expander("What I actually said (optional, to score each model)"):
-        t1, t2, t3 = st.columns(3)
-        truth = {"name": t1.text_input("Name"), "phone": t2.text_input("Phone"),
-                 "order_id": t3.text_input("Order ID")}
-
-    if has("DEEPGRAM_API_KEY"):
-        live_shadow = {"type": "deepgram", "model": "nova-3", "api_key": user_keys.get("DEEPGRAM_API_KEY") or None}
-    elif has("OPENAI_API_KEY"):
-        live_shadow = {"type": "openai_stt", "model": "whisper-1",
-                       "api_key": user_keys.get("OPENAI_API_KEY") or None}
-    else:
-        live_shadow = {"type": "mock"}
-    st.caption(f"Second recognizer used by the plugins: {live_shadow['type']} {live_shadow.get('model', '')}")
-
-    rec = st.audio_input("Record one caller turn")
-    if rec is not None and st.button("Compare", type="primary", disabled=not chosen):
-        cfgs = []
-        for label in chosen:
-            cfg = dict(PRESETS[label][0], name=label)
-            env = PRESETS[label][1]
-            if env and user_keys.get(env):
-                cfg["api_key"] = user_keys[env]          # per-request only
-            if cfg["type"] == "elevenlabs_agent":
-                if not el_id:
-                    st.warning("ElevenLabs needs an agent ID; skipped.")
-                    continue
-                cfg["agent_id"] = el_id
-            if cfg["type"] == "vapi":
-                if not vapi_id:
-                    st.warning("Vapi needs an assistant ID; skipped.")
-                    continue
-                cfg["assistant_id"] = vapi_id
-            cfgs.append(cfg)
-        audio, sr = decode_wav(rec.getvalue())
-        with st.spinner(f"Running {len(cfgs)} models on {len(audio) / sr:.1f} s of audio"):
-            results, shadow_tr, (heard, heard_sr) = asyncio.run(compare(
-                audio, sr, cfgs, live_shadow, roster_txt.splitlines(), orders_txt.splitlines(),
-                phone_line, truth))
-
-        st.write("What the models heard")
-        st.audio(wav_bytes(heard, heard_sr), format="audio/wav")
-        st.write(f"Second recognizer transcript: {shadow_tr.text or '(empty)'}")
-
-        table = []
-        for r in results:
-            fields = [f for f in FIELDS if r.before.get(f) or r.after.get(f) or f in r.actions or truth.get(f)]
-            if r.error:
-                table.append({"Model": r.model, "Field": "", "Before": "", "After": "", "Plugin": "error",
-                              "Reason": r.error[:160]})
-                continue
-            if not fields:
-                table.append({"Model": r.model, "Field": "", "Before": "(no tool call)", "After": "",
-                              "Plugin": "agent asked" if asked(r) else "", "Reason": r.agent_text[:160]})
-            for f in fields:
-                act, why = r.actions.get(f, ("", ""))
-                row = {"Model": r.model, "Field": f, "Before": r.before.get(f, ""), "After": r.after.get(f, ""),
-                       "Plugin": act, "Reason": why}
-                if f in r.scores:
-                    b_ok, a_ok, _ = r.scores[f]
-                    row["Before ok"] = "yes" if b_ok else "no"
-                    row["After ok"] = "yes" if a_ok else "no"
-                table.append(row)
-        st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
-
-        meta = pd.DataFrame([{"Model": r.model,
-                              "Latency ms": None if r.latency_ms != r.latency_ms else round(r.latency_ms),
-                              "Called before you finished": "yes" if r.cut_in else "no",
-                              "Agent said": r.agent_text[:200]} for r in results])
-        st.dataframe(meta, hide_index=True, width="stretch")
-        st.caption("After ok counts a confirmation as ok: the plugin asked instead of passing on a wrong value. "
-                   "Latency is measured differently per provider type; see docs/PROVIDERS.md.")
+    from live_tab import render as render_live
+    render_live()
 
 # --------------------------------------------------------------------------- Run
 with tab_run:
@@ -311,7 +192,10 @@ with tab_run:
 
 # --------------------------------------------------------------------------- Results
 with tab_results:
-    runs = load_runs(RUNS_DIR)
+    runs = pd.concat([load_runs(d) for d in (RUNS_DIR, "published") if Path(d).exists()] or [pd.DataFrame()],
+                     ignore_index=True)
+    if not runs.empty:
+        runs = runs.drop_duplicates(subset=["run", "case_id", "field", "trial"])
     if runs.empty:
         st.write("No runs yet.")
     else:

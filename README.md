@@ -86,7 +86,9 @@ The agent is called once per case. "Before" is its raw tool call. "After" is the
 
 ### Live comparison
 
-The UI's **Live** tab records one caller turn from your microphone, optionally passes it through a simulated phone line, sends the same audio to every selected model at once, and shows each model's tool call before and after the plugins, with the plugin's action and reason. Type what you actually said to score each model. Visitors to a deployed copy can paste their own provider keys; those are passed per request and never stored or written to environment variables.
+Hosting it for others (free, passcode-protected): [docs/DEPLOY.md](docs/DEPLOY.md).
+
+The UI's **Live** tab plays a sample call from the benchmark (the calls models got wrong most often, picked by `voxguard samples`) or records one caller turn from your microphone, optionally passes it through a simulated phone line, sends the same audio to every selected model at once, and shows, per model, what the backend would receive without and with voxguard, marked correct, wrong, or "asks the caller", with the plugin's reason. Type what you actually said to score each model. Visitors to a deployed copy can paste their own provider keys; those are passed per request and never stored or written to environment variables.
 
 ### Accents and repeats
 

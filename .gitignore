@@ -7,3 +7,5 @@ data/
 runs/
 .env
 *.wav
+!demo/samples/*.wav
+.streamlit/secrets.toml
