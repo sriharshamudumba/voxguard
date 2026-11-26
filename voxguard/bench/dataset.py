@@ -73,7 +73,9 @@ def _say_group(g: str, rng: random.Random, allow_pairs: bool) -> str:
             out.append("double " + _W[int(g[i])])
             i += 2
             continue
-        if allow_pairs and i + 1 < len(g) and g[i] != "0" and rng.random() < 0.35:
+        take = allow_pairs and i + 1 < len(g) and g[i] != "0" and rng.random() < 0.35
+        # "fifty" then "five" is heard as fifty-five, so a pair ending in zero must end the group
+        if take and not (g[i + 1] == "0" and i + 2 < len(g)):
             out.append(int_to_words(int(g[i:i + 2])))
             i += 2
             continue
@@ -149,3 +151,24 @@ def expand_accents(cases: list[Case], accents: list[str]) -> list[Case]:
             d.update(id=f"{c.id}__{a}", accent=a, audio_path=None)
             out.append(Case(**d))
     return out
+
+
+def spoken_digits(text: str) -> str:
+    """Digits a listener would write down, reading each comma-separated group on its own."""
+    import re
+
+    from ..numbers.spoken import only_digits, words_to_digits
+    text = re.sub(r"\boh\b", "zero", text, flags=re.I)   # a lone "oh" after a pause is a zero
+    return "".join(only_digits(words_to_digits(p)) for p in re.split(r"[,.]", text))
+
+
+def audit_cases(cases: list[Case]) -> list[tuple[str, str, str, str]]:
+    """Cases whose scripted words do not say the expected number: (id, field, expected, heard)."""
+    bad = []
+    for c in cases:
+        for f, v in c.expected.items():
+            if f in ("phone", "order_id"):
+                heard = spoken_digits(c.caller_text)
+                if str(v) not in heard:
+                    bad.append((c.id, f, str(v), heard))
+    return bad

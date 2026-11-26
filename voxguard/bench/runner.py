@@ -84,6 +84,8 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
             "guard_ms": guard_ms, "agent_error": res.error, "caller_text": case.caller_text,
             "cut_in": bool(res.raw.get("cut_in", False)), "n_tool_calls": res.raw.get("n_tool_calls"),
             "agent_text": res.text,
+            "agent_heard": " | ".join(res.raw.get("heard", []) or []) or None,
+            "provider_warnings": " | ".join(res.raw.get("warnings", []) or []) or None,
         })
     return rows
 

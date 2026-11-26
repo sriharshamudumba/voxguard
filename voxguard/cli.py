@@ -7,12 +7,15 @@
   voxguard report --runs runs --out report
   voxguard samples   (pick demo calls for the Live tab)
   voxguard publish   (copy the latest runs into published/ for the hosted demo)
+  voxguard probe --config configs/deepgram_endpointing.toml --expect 8882722028
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import tomllib
+from pathlib import Path
 
 import pandas as pd
 
@@ -35,6 +38,36 @@ def _fmt(df: pd.DataFrame) -> str:
     return d.to_string(index=False)
 
 
+def probe(config: str, expect: str, accent: str) -> str:
+    """Run one matching case through every agent in a config; show the agent's own transcript."""
+    from .backends.audio import read_wav
+    from .backends.base import TurnInput
+    from .bench.dataset import SYSTEM_PROMPT, TOOLS
+
+    with open(config, "rb") as f:
+        cfg = tomllib.load(f)
+    cases = [c for c in load_cases(cfg["data"]["cases"])
+             if expect in [str(v) for v in c.expected.values()] and (c.accent or "") == accent]
+    if not cases:
+        return f"no case with expected value {expect} and accent {accent}"
+    c = cases[0]
+    audio, sr = read_wav(c.audio_path)
+    out = [f"case {c.id}  accent {c.accent}  audio {c.audio_path}",
+           f"caller text: {c.caller_text}", f"expected:    {c.expected}"]
+    for acfg in cfg["agents"]:
+        agent = build_agent(acfg)
+        res = asyncio.run(agent.run_turn(TurnInput(audio, sr, SYSTEM_PROMPT, TOOLS, c.caller_text,
+                                                   c.expected, c.seed, c.accent)))
+        out += ["", f"== {agent.name}",
+                f"agent heard:  {res.raw.get('heard')}",
+                f"tool calls:   {[t.args for t in res.tool_calls]}",
+                f"cut in:       {res.raw.get('cut_in')}   calls: {res.raw.get('n_tool_calls')}",
+                f"warnings:     {res.raw.get('warnings') or 'none'}"]
+        if res.error:
+            out.append(f"error:        {res.error[:300]}")
+    return "\n".join(out)
+
+
 KIND_LABEL = {"phone": "Phone number", "order_id": "Order ID", "name": "Name on the booking list",
               "name_new": "First-time caller name"}
 
@@ -45,9 +78,11 @@ def make_samples(cases_path: str, out: str, per_kind: int, runs_dir: str | None)
     import shutil
     from pathlib import Path
 
+    from .bench.report import read_excluded
     from .bench.runner import load_runs
-
-    cases = [c for c in load_cases(cases_path) if c.audio_path and Path(c.audio_path).exists()]
+    excluded = set(read_excluded())   # mislabeled cases found by `voxguard audit`
+    cases = [c for c in load_cases(cases_path)
+             if c.audio_path and Path(c.audio_path).exists() and c.id not in excluded]
     if not cases:
         return "no cases with audio; run `voxguard synth` first"
     hard: dict[str, int] = {}
@@ -97,8 +132,15 @@ def publish_runs(runs_dir: str, out: str) -> str:
     out_dir = Path(out)
     if out_dir.exists():
         shutil.rmtree(out_dir)
+    from .bench.report import read_excluded
+    excluded = set(read_excluded())
     for r in latest:
-        shutil.copytree(Path(runs_dir) / r, out_dir / r)
+        shutil.copytree(Path(runs_dir) / r, out_dir / r, ignore=shutil.ignore_patterns("*.wav"))
+        rows_path = out_dir / r / "rows.jsonl"
+        if excluded and rows_path.exists():
+            keep = [ln for ln in rows_path.read_text().splitlines()
+                    if ln.strip() and json.loads(ln).get("case_id") not in excluded]
+            rows_path.write_text("\n".join(keep) + "\n")
     return f"published {len(latest)} runs to {out_dir}: " + ", ".join(latest)
 
 
@@ -139,6 +181,14 @@ def main(argv=None) -> None:
     pb = sub.add_parser("publish", help="copy the latest run per model into published/ for the hosted demo")
     pb.add_argument("--runs", default="runs")
     pb.add_argument("--out", default="published")
+
+    au = sub.add_parser("audit", help="find test cases whose scripted words do not say the labeled number")
+    au.add_argument("--cases", default="data/cases.jsonl")
+
+    pr = sub.add_parser("probe", help="run one call per agent and print what the agent heard and recorded")
+    pr.add_argument("--config", required=True)
+    pr.add_argument("--expect", required=True, help="an expected value to match, e.g. 8882722028")
+    pr.add_argument("--accent", default="us")
 
     v = sub.add_parser("vad", help="offline endpointing benchmark")
     v.add_argument("--cases", default=None)
@@ -194,6 +244,18 @@ def main(argv=None) -> None:
         print(make_samples(a.cases, a.out, a.per_kind, a.from_runs))
     elif a.cmd == "publish":
         print(publish_runs(a.runs, a.out))
+    elif a.cmd == "audit":
+        from .bench.dataset import audit_cases
+        from .bench.report import EXCLUDE_FILE
+        bad = audit_cases(load_cases(a.cases))
+        ids = sorted({b[0] for b in bad})
+        for cid, f, exp, heard in bad:
+            print(f"{cid}  {f}: labeled {exp}, but the words say {heard}")
+        Path(EXCLUDE_FILE).parent.mkdir(parents=True, exist_ok=True)
+        Path(EXCLUDE_FILE).write_text("\n".join(ids) + ("\n" if ids else ""))
+        print(f"{len(ids)} cases written to {EXCLUDE_FILE}; report and publish leave them out")
+    elif a.cmd == "probe":
+        print(probe(a.config, a.expect, a.accent))
     elif a.cmd == "vad":
         from .bench.vad_sim import simulate, summarize_vad
         from .vad import EntityAwareEndpointer, FixedEndpointer

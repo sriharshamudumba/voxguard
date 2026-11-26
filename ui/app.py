@@ -195,7 +195,9 @@ with tab_results:
     runs = pd.concat([load_runs(d) for d in (RUNS_DIR, "published") if Path(d).exists()] or [pd.DataFrame()],
                      ignore_index=True)
     if not runs.empty:
+        from voxguard.bench.report import read_excluded
         runs = runs.drop_duplicates(subset=["run", "case_id", "field", "trial"])
+        runs = runs[~runs["case_id"].isin(read_excluded())]
     if runs.empty:
         st.write("No runs yet.")
     else:

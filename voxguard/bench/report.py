@@ -69,6 +69,14 @@ def _before_after(ax, d: pd.DataFrame, title: str, label_after: bool = True, ci:
     _style(ax, "Silent error rate (%)")
 
 
+EXCLUDE_FILE = "data/excluded_cases.txt"
+
+
+def read_excluded(path: str = EXCLUDE_FILE) -> list[str]:
+    p = Path(path)
+    return [x.strip() for x in p.read_text().splitlines() if x.strip()] if p.exists() else []
+
+
 def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     import matplotlib
     matplotlib.use("Agg")
@@ -78,6 +86,9 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     if runs.empty:
         raise SystemExit(f"no runs in {runs_dir}")
     rows = latest_per_model(runs)
+    excluded = read_excluded()
+    if excluded:
+        rows = rows[~rows["case_id"].isin(excluded)]
     summ = pd.concat([summarize(rows), overall(rows)], ignore_index=True)
     ci = bootstrap_ci(rows)
     has_accents = rows["accent"].nunique() > 1 if "accent" in rows else False
@@ -198,6 +209,11 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     lines = ["# voxguard results", "",
              f"Runs: {', '.join(sorted(rows['run'].unique()))}", "",
              "Intervals are 95% bootstrap confidence intervals, resampling whole test cases.", "",
+             *([f"Excluded {len(excluded)} test cases whose scripted words do not say the labeled number "
+                f"(found by `voxguard audit`): {', '.join(excluded)}.", ""] if excluded else []),
+             *([f"The second recognizer took {rows['shadow_ms'].median():.0f} ms per turn (median). It runs "
+                "alongside the agent, so it adds cost but not latency unless it is slower than the agent.", ""]
+               if "shadow_ms" in rows and rows["shadow_ms"].notna().any() else []),
              "| Model | n | Before error | After silent error | Reduction | Caught | Corrected | "
              "False confirm | p50 ms | p95 ms |",
              "|---|---|---|---|---|---|---|---|---|---|"]

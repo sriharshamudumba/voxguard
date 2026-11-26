@@ -94,6 +94,8 @@ class DeepgramAgentBackend(AgentBackend):
         import websockets
         col = CallCollector()
         text: list[str] = []
+        heard: list[str] = []      # what the agent's own recognizer passed to the LLM
+        warnings: list[str] = []   # Deepgram Warning messages (e.g. a setting it ignored)
         t0 = time.perf_counter()
         try:
             async with websockets.connect(self.url, additional_headers={"Authorization": f"Token {self.api_key}"},
@@ -105,6 +107,8 @@ class DeepgramAgentBackend(AgentBackend):
                         j = json.loads(m)
                         if j.get("type") == "SettingsApplied":
                             break
+                        if j.get("type") == "Warning":
+                            warnings.append(json.dumps(j))
                         if j.get("type") == "Error":
                             return AgentResult([], error=json.dumps(j))
 
@@ -115,6 +119,10 @@ class DeepgramAgentBackend(AgentBackend):
                         j = json.loads(m)
                         if j.get("type") == "ConversationText" and j.get("role") == "assistant":
                             text.append(j.get("content", ""))
+                        elif j.get("type") == "ConversationText" and j.get("role") == "user":
+                            heard.append(j.get("content", ""))
+                        elif j.get("type") == "Warning":
+                            warnings.append(json.dumps(j))
                         elif j.get("type") == "Error":
                             text.append("ERROR " + json.dumps(j))
                         if j.get("type") == "FunctionCallRequest":
@@ -129,6 +137,7 @@ class DeepgramAgentBackend(AgentBackend):
                                   max_silence_s=self.timeout / 3)
                 rtask.cancel()
         except Exception as e:
-            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
-        st = col.stats()
+            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000,
+                               {"heard": heard, "warnings": warnings}, error=repr(e))
+        st = dict(col.stats(), heard=heard, warnings=warnings)
         return AgentResult(col.merged(), " ".join(text), st["latency_ms"], st)

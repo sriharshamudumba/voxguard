@@ -89,3 +89,14 @@ def test_live_compare_reports_provider_errors():
     results, _, _ = asyncio.run(compare(np.zeros(8000, np.float32), 8000,
                                         [{"type": "nonexistent", "name": "bad"}], {"type": "mock"}))
     assert results[0].error
+
+
+def test_audit_flags_ambiguous_spoken_numbers():
+    from voxguard.bench.dataset import Case, audit_cases, generate_cases
+
+    bad = Case(id="x", kind="phone", caller_text="it's four three seven, three seven three, fifty five four.",
+               expected={"phone": "4373735054"})
+    ok = Case(id="y", kind="order_id", caller_text="order two seventy, five eight six, four.",
+              expected={"order_id": "2705864"})
+    assert [b[0] for b in audit_cases([bad, ok])] == ["x"]
+    assert audit_cases(generate_cases(200, seed=3)) == []   # the generator no longer writes such cases
