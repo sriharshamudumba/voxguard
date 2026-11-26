@@ -2,7 +2,7 @@
 
 Agent config examples:
   {type = "openai_realtime", model = "gpt-realtime"}
-  {type = "gemini_live", model = "gemini-live-2.5-flash"}
+  {type = "gemini_live", model = "gemini-3.8-live"}
   {type = "audio_llm", base_url = "http://localhost:8000/v1",
    model = "fixie-ai/ultravox-v0_5-llama-3_1-8b", api_key = "x"}
   {type = "cascade", stt = {type = "openai_stt", model = "whisper-1"},
@@ -52,8 +52,8 @@ def build_agent(cfg: dict[str, Any]) -> AgentBackend:
                                      schema=cfg.get("schema", "ga"), name=name)
     if t == "gemini_live":
         from .gemini_live import GeminiLiveBackend
-        return GeminiLiveBackend(model=cfg.get("model", "gemini-live-2.5-flash"), api_key=cfg.get("api_key"),
-                                 response_modality=cfg.get("response_modality", "TEXT"), name=name)
+        return GeminiLiveBackend(model=cfg.get("model", "gemini-3.8-live"), api_key=cfg.get("api_key"),
+                                 response_modality=cfg.get("response_modality", "AUDIO"), name=name)
     if t == "audio_llm":
         from .openai_compat import AudioLLMBackend
         return AudioLLMBackend(base_url=cfg["base_url"], model=cfg["model"], api_key=cfg.get("api_key"),

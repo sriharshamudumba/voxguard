@@ -84,6 +84,10 @@ The agent is called once per case. "Before" is its raw tool call. "After" is the
 | `broken` | right value, plugin changed it to a wrong one |
 | `agent_p50_ms`, `guard_p95_ms` | agent latency, and time added by the plugins |
 
+### Live comparison
+
+The UI's **Live** tab records one caller turn from your microphone, optionally passes it through a simulated phone line, sends the same audio to every selected model at once, and shows each model's tool call before and after the plugins, with the plugin's action and reason. Type what you actually said to score each model. Visitors to a deployed copy can paste their own provider keys; those are passed per request and never stored or written to environment variables.
+
 ### Accents and repeats
 
 `voxguard synth --accents all` records every case once per accent: us, british, irish, scottish, indian, nigerian, mexican, chinese, arabic, fast_casual. Pick a subset with `--accents us,indian,scottish`. Set `repeats` in the config to run the whole set several times, since model outputs vary between runs. The report adds before/after heatmaps by accent and 95% bootstrap confidence intervals that resample whole test cases, so accent copies and repeats of one case are not counted as independent evidence.
@@ -107,7 +111,7 @@ voxguard synth --cases data/cases.jsonl --provider openai --accents all   # ever
 voxguard bench --config configs/all_providers.toml
 voxguard report                                                          # charts + REPORT.md
 
-# UI
+# UI: Live, Run, Results, Endpointing
 streamlit run ui/app.py
 ```
 
@@ -130,7 +134,7 @@ streamlit run ui/app.py
 
 Provider setup, including ElevenLabs and Vapi: [docs/PROVIDERS.md](docs/PROVIDERS.md). All six providers in one config: `configs/all_providers.toml`.
 
-Charts and a markdown summary from saved runs: `voxguard report` writes `report/REPORT.md` plus `silent_error.png`, `silent_error_by_entity.png`, `false_confirm.png`, and `latency.png`.
+Charts and a markdown summary from saved runs: `voxguard report` writes `report/REPORT.md` plus `silent_error.png` (with 95% intervals), `entities.png` and `accents.png` (before/after heatmaps), `silent_error_by_entity.png`, `false_confirm.png`, `cut_in.png`, and `latency.png`.
 
 Adding a backend means implementing one method, `run_turn(TurnInput) -> AgentResult`. See [docs/ADDING_A_BACKEND.md](docs/ADDING_A_BACKEND.md).
 

@@ -1,9 +1,8 @@
-# Six providers, before and after the plugins.
+# All six providers, before and after the plugins.
 #   source .env
-#   voxguard gen --n 10 --out data/cases.jsonl
-#   voxguard synth --cases data/cases.jsonl --provider openai
 #   voxguard bench --config configs/all_providers.toml
 #   voxguard report
+# To run providers in parallel instead, use one configs/run_<provider>.toml per terminal.
 # Setup for ElevenLabs and Vapi: docs/PROVIDERS.md
 
 [data]
@@ -11,12 +10,12 @@ cases = "data/cases.jsonl"
 
 [run]
 repeats = 1             # run the whole set N times; models are not deterministic
-concurrency = 1          # free tiers and real-time streaming; raise once everything works
+concurrency = 1
 use_keyterms = true
 out_dir = "runs"
 
 [shadow]
-type = "deepgram"        # second recognizer used by the plugins
+type = "deepgram"       # second recognizer used by the plugins
 model = "nova-3"
 
 [[agents]]
@@ -26,12 +25,14 @@ model = "gpt-realtime"
 
 [[agents]]
 type = "gemini_live"
-name = "Google Gemini Live"
-model = "gemini-live-2.5-flash"
+name = "Google Gemini Live 3.8"
+model = "gemini-3.8-live"
+response_modality = "AUDIO"
 
 [[agents]]
 type = "deepgram_agent"
-name = "Deepgram Voice Agent"
+name = "Deepgram Voice Agent (Nova-3)"
+listen_model = "nova-3"
 think_model = "gpt-4o-mini"
 
 [[agents]]

@@ -23,7 +23,8 @@ schema = "ga"
 
 [[agents]]
 type = "gemini_live"
-model = "gemini-live-2.5-flash"
+model = "gemini-3.8-live"
+response_modality = "AUDIO"
 
 # Open speech LLM served locally by vLLM (OpenAI-compatible, audio in)
 # vllm serve fixie-ai/ultravox-v0_5-llama-3_1-8b --enable-auto-tool-choice --tool-call-parser llama3_json

@@ -64,5 +64,28 @@ def test_report_builds(tmp_path):
     rows, summ = asyncio.run(run_benchmark(cases, MockAgent(), MockShadow()))
     save_run(rows, summ, str(tmp_path / "runs"))
     out = build_report(str(tmp_path / "runs"), str(tmp_path / "report"))
-    for f in ["REPORT.md", "silent_error.png", "accents.png", "latency.png"]:
+    for f in ["REPORT.md", "silent_error.png", "accents.png", "entities.png", "latency.png"]:
         assert (out / f).exists()
+
+
+def test_live_compare_with_simulated_models():
+    from voxguard.backends.audio import wav_bytes
+    from voxguard.live import compare, decode_wav
+    tone = (np.sin(np.linspace(0, 400 * np.pi, 32000)) * 0.3).astype(np.float32)
+    audio, sr = decode_wav(wav_bytes(tone, 16000))
+    assert sr == 16000 and abs(len(audio) - 32000) < 2
+    cfgs = [{"type": "mock", "profile": "sts_typical", "name": "a"},
+            {"type": "mock", "profile": "cascade_typical", "name": "b"}]
+    results, shadow, (heard, heard_sr) = asyncio.run(compare(
+        audio, sr, cfgs, {"type": "mock"}, roster=["Siobhan Murphy"], phone_line=True,
+        truth={"phone": "6175550188"}))
+    assert heard_sr == 8000 and len(results) == 2
+    for r in results:
+        assert r.error is None and "phone" in r.before and "phone" in r.scores
+
+
+def test_live_compare_reports_provider_errors():
+    from voxguard.live import compare
+    results, _, _ = asyncio.run(compare(np.zeros(8000, np.float32), 8000,
+                                        [{"type": "nonexistent", "name": "bad"}], {"type": "mock"}))
+    assert results[0].error

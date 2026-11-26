@@ -138,26 +138,27 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     fig.savefig(out / "latency.png", dpi=160)
     plt.close(fig)
 
-    # 5. accents: before and after heatmaps on one shared sequential scale
-    acc_table = None
-    if has_accents:
+    # 5. heatmaps: before and after on one shared sequential scale, by entity and by accent
+    def heatmap(by: str, fname: str, title: str):
         import numpy as np
         from matplotlib.colors import LinearSegmentedColormap
-        acc = summarize(rows, by="accent")
-        before = acc.pivot(index="model", columns="accent", values="before_error") * 100
-        after = acc.pivot(index="model", columns="accent", values="after_silent_error") * 100
+        tab = summarize(rows, by=by)
+        before = tab.pivot(index="model", columns=by, values="before_error") * 100
+        after = tab.pivot(index="model", columns=by, values="after_silent_error") * 100
         order = before.mean(axis=0).sort_values().index
         before, after = before[order], after[order]
+        labels = [KIND_LABEL.get(c, c) for c in order]
         vmax = max(np.nanmax(before.to_numpy()), 1.0)
         cmap = LinearSegmentedColormap.from_list("seq", ["#f2f7fd", "#9cc3ef", AFTER, "#123f73"])
         fig, axes = plt.subplots(1, 2, figsize=(min(16, max(10, 0.75 * len(order) * 2)), height * 1.1),
                                  facecolor=SURFACE, sharey=True)
-        for ax, mat, title in [(axes[0], before, "Before: error rate by accent (%)"),
-                               (axes[1], after, "After: silent error rate by accent (%)")]:
+        im = None
+        for ax, mat, sub in [(axes[0], before, f"Before: error rate by {title} (%)"),
+                             (axes[1], after, f"After: silent error rate by {title} (%)")]:
             im = ax.imshow(mat.to_numpy(), cmap=cmap, vmin=0, vmax=vmax, aspect="auto")
-            ax.set_xticks(range(len(order)), order, rotation=35, ha="right", color=INK, fontsize=9)
+            ax.set_xticks(range(len(order)), labels, rotation=35, ha="right", color=INK, fontsize=9)
             ax.set_yticks(range(len(mat.index)), mat.index, color=INK, fontsize=9)
-            ax.set_title(title, loc="left", fontsize=10, color=INK)
+            ax.set_title(sub, loc="left", fontsize=10, color=INK)
             for s_ in ax.spines.values():
                 s_.set_visible(False)
             ax.tick_params(length=0)
@@ -168,10 +169,28 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
                         ax.text(j, i, f"{v:.0f}", ha="center", va="center", fontsize=8,
                                 color="white" if v > vmax * 0.55 else INK)
         fig.colorbar(im, ax=axes, shrink=0.8, label="%")
-        fig.savefig(out / "accents.png", dpi=160, bbox_inches="tight", facecolor=SURFACE)
+        fig.savefig(out / fname, dpi=160, bbox_inches="tight", facecolor=SURFACE)
         plt.close(fig)
-        acc.to_csv(out / "summary_by_accent.csv", index=False)
-        acc_table = (before.round(1), after.round(1))
+        tab.to_csv(out / f"summary_by_{by}.csv", index=False)
+        return before.round(1), after.round(1)
+
+    entity_table = heatmap("kind", "entities.png", "entity")
+    acc_table = heatmap("accent", "accents.png", "accent") if has_accents else None
+
+    # 6. turn-taking: how often the agent called the tool before the caller finished
+    d = summ[summ["kind"] == "all"].sort_values("cut_in")
+    if "cut_in" in d and d["cut_in"].fillna(0).max() > 0:
+        fig, ax = plt.subplots(figsize=(8, height), facecolor=SURFACE)
+        ax.barh(d["model"], d["cut_in"].fillna(0) * 100, height=0.5, color=INK_2)
+        for i, v in enumerate(d["cut_in"].fillna(0) * 100):
+            ax.text(v + 0.5, i, f"{v:.0f}%", va="center", fontsize=8, color=INK)
+        ax.set_title("Calls where the agent recorded a value before the caller finished", loc="left",
+                     fontsize=10, color=INK)
+        ax.tick_params(axis="y", colors=INK)
+        _style(ax, "Cut-in rate (%)")
+        fig.tight_layout()
+        fig.savefig(out / "cut_in.png", dpi=160)
+        plt.close(fig)
 
     # markdown summary
     t = summ[summ["kind"] == "all"].copy()
@@ -194,8 +213,17 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
         b, a = acc_table
         lines += ["", "## By accent", "", "Before error (%):", "", b.to_markdown(), "",
                   "After silent error (%):", "", a.to_markdown(), "", "![Accents](accents.png)"]
-    lines += ["", "![Silent error](silent_error.png)", "", "![By entity](silent_error_by_entity.png)", "",
-              "![False confirmations](false_confirm.png)", "", "![Latency](latency.png)", ""]
+    b, a = entity_table
+    lines += ["", "## By entity", "", "Before error (%):", "", b.to_markdown(), "",
+              "After silent error (%):", "", a.to_markdown(), "",
+              "![Silent error](silent_error.png)", "", "![Entities](entities.png)", "",
+              "![By entity](silent_error_by_entity.png)", "", "![False confirmations](false_confirm.png)", ""]
+    if (out / "cut_in.png").exists():
+        lines += ["![Cut-ins](cut_in.png)", ""]
+    lines += ["![Latency](latency.png)", "",
+              "Latency is measured from the end of caller audio to the tool call. Models with manual turn "
+              "commits (OpenAI, Gemini) and platforms with their own end-of-turn detection (Deepgram, "
+              "AssemblyAI, ElevenLabs, Vapi) are measured differently; compare within each group.", ""]
     if rows["model"].str.startswith("mock:").any():
         lines.insert(2, "**Includes simulated mock models. Do not report those rows as real results.**\n")
     (out / "REPORT.md").write_text("\n".join(lines))

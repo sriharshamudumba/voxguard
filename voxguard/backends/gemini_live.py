@@ -25,8 +25,8 @@ URL = ("wss://generativelanguage.googleapis.com/ws/"
 class GeminiLiveBackend(AgentBackend):
     kind = "sts"
 
-    def __init__(self, model: str = "gemini-live-2.5-flash", api_key: str | None = None,
-                 api_key_env: str = "GEMINI_API_KEY", response_modality: str = "TEXT",
+    def __init__(self, model: str = "gemini-3.8-live", api_key: str | None = None,
+                 api_key_env: str = "GEMINI_API_KEY", response_modality: str = "AUDIO",
                  timeout: float = 60, name: str | None = None):
         self.model = model if model.startswith("models/") else f"models/{model}"
         self.api_key = api_key or os.environ.get(api_key_env, "")
