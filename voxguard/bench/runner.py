@@ -134,7 +134,7 @@ def save_run(rows: pd.DataFrame, summary: pd.DataFrame, out_dir: str = "runs", t
 def load_runs(out_dir: str = "runs") -> pd.DataFrame:
     frames = []
     for d in sorted(Path(out_dir).glob("*/rows.jsonl")):
-        df = pd.read_json(d, lines=True)
+        df = pd.read_json(d, lines=True, dtype=False)  # keep IDs and numbers as text
         df["run"] = d.parent.name
         frames.append(df)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
