@@ -221,6 +221,19 @@ def main(argv=None) -> None:
     pb.add_argument("--runs", default="runs")
     pb.add_argument("--out", default="published")
 
+    sv = sub.add_parser("serve", help="run voxguard as an HTTP service for hosted agents (Vapi, Retell, webhooks)")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--fields", default="phone:phone,order_id:order_id,name:name",
+                    help="tool argument:kind pairs; kinds: phone, order_id, card, number, name")
+    sv.add_argument("--roster", default=None, help="text file, one expected name per line")
+    sv.add_argument("--log", default="voxguard_calls.jsonl", help="decision log for `voxguard calls`")
+    sv.add_argument("--transcript-source", choices=["pipeline", "side_channel"], default="pipeline")
+    sv.add_argument("--no-redact", action="store_true", help="log values unmasked (test calls only)")
+
+    cl = sub.add_parser("calls", help="summarize what voxguard did on real calls, from the decision log")
+    cl.add_argument("--log", default="voxguard_calls.jsonl")
+
     rc = sub.add_parser("recover", help="Layer 3: replay each confirmation as a follow-up turn and score it")
     rc.add_argument("--runs", default="runs")
     rc.add_argument("--config", default="configs/deepgram_endpointing.toml",
@@ -291,6 +304,18 @@ def main(argv=None) -> None:
         print(make_samples(a.cases, a.out, a.per_kind, a.from_runs))
     elif a.cmd == "publish":
         print(publish_runs(a.runs, a.out))
+    elif a.cmd == "serve":
+        import os
+
+        from .sdk import Guard
+        from .server import serve
+        fields = dict(x.split(":") for x in a.fields.split(",") if x)
+        roster = Path(a.roster).read_text().splitlines() if a.roster else []
+        serve(Guard(fields, [r for r in roster if r.strip()], log_path=a.log, transcript_source=a.transcript_source,
+                    redact=not a.no_redact), a.host, a.port, os.environ.get("VOXGUARD_TOKEN"))
+    elif a.cmd == "calls":
+        from .sdk import summarize_log
+        print(summarize_log(a.log))
     elif a.cmd == "recover":
         print(recover(a.runs, a.config, a.mode, a.model))
     elif a.cmd == "audit":

@@ -19,6 +19,23 @@ Known failure modes this targets:
 | Cutting in mid-number | caller pauses between digit groups and the agent starts talking |
 | Mispronounced numbers and names in TTS | "58213" read as a garbled word |
 
+## Use it in a live agent
+
+```python
+from voxguard.sdk import Guard
+guard = Guard(roster=todays_names, log_path="voxguard_calls.jsonl")
+call = guard.new_call(call_id)
+call.add_transcript(caller_text)                     # from your speech-to-text
+d = await call.acheck("record_details", args)        # before running the tool
+if d.action == "confirm":
+    return d.say                                     # the LLM asks one targeted question
+run_tool(d.args)                                     # possibly corrected values
+```
+
+Any framework: Pipecat, LiveKit, raw OpenAI Realtime or Gemini Live, or hosted platforms (Vapi,
+Retell) through `voxguard serve`. See [docs/INTEGRATE.md](docs/INTEGRATE.md); measure it on your own
+calls with `voxguard calls`.
+
 ## Three layers
 
 Every turn is scored, and fixed, at three layers ([docs/LAYERS.md](docs/LAYERS.md)):
