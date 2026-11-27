@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from ..backends.audio import read_wav
-from ..backends.base import AgentBackend, ShadowASR, TurnInput
+from ..backends.base import AgentBackend, AgentResult, ShadowASR, TurnInput
 from ..core.plugin import PluginChain
 from ..core.types import ShadowTranscript, ToolCall, TurnContext
 from ..layers import attribute, recognize_entity
@@ -43,6 +43,9 @@ class RunConfig:
     extra: dict = field(default_factory=dict)
 
 
+TURN_TIMEOUT_S = 120.0
+
+
 async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain: PluginChain,
                cfg: RunConfig, trial: int = 0) -> list[dict]:
     audio, sr = (read_wav(case.audio_path) if case.audio_path else (np.zeros(1600, np.float32), 8000))
@@ -61,7 +64,14 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
             st.error = repr(e)  # type: ignore[attr-defined]
         return st, (time.perf_counter() - t) * 1000
 
-    res, (st, shadow_ms) = await asyncio.gather(agent.run_turn(turn), run_shadow())
+    async def run_agent():
+        # hard limit per call: one stuck connection becomes one error row, not a stalled run
+        try:
+            return await asyncio.wait_for(agent.run_turn(turn), timeout=TURN_TIMEOUT_S)
+        except TimeoutError:
+            return AgentResult([], "", TURN_TIMEOUT_S * 1000, error=f"no result after {TURN_TIMEOUT_S:.0f} s")
+
+    res, (st, shadow_ms) = await asyncio.gather(run_agent(), run_shadow())
     call = next((c for c in res.tool_calls if c.name == "record_details"), None) or \
         (res.tool_calls[0] if res.tool_calls else ToolCall("record_details", {}))
     heard = " | ".join(h for h in (res.raw.get("heard") or []) if h) or None
