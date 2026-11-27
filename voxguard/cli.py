@@ -38,6 +38,43 @@ def _fmt(df: pd.DataFrame) -> str:
     return d.to_string(index=False)
 
 
+def recover(runs_dir: str, config: str, mode: str, model: str | None) -> str:
+    """Layer 3 on the latest run per model; writes recovery.jsonl next to each run's rows."""
+    from .bench.recover import Recognizer, end_to_end, recover_rows, save_recovery
+    from .bench.report import latest_per_model, read_excluded
+    from .bench.runner import load_runs
+
+    runs = load_runs(runs_dir)
+    if runs.empty:
+        return f"no runs in {runs_dir}"
+    rows = latest_per_model(runs)
+    rows = rows[~rows["case_id"].isin(read_excluded())]
+    if model:
+        rows = rows[rows["model"].str.contains(model, case=False)]
+    shadow = None
+    if mode == "tts":
+        with open(config, "rb") as f:
+            shadow = build_shadow(tomllib.load(f).get("shadow", {"type": "mock"}))
+    recog = Recognizer(shadow, mode)
+    recs = []
+    for run, g in rows.groupby("run"):
+        n = int((g["action"] == "confirm").sum())
+        print(f"{g['model'].iloc[0]}: {n} confirmations to replay", flush=True)
+        rec = asyncio.run(recover_rows(g, recog))
+        save_recovery(Path(runs_dir) / run, rec, mode)
+        recs.append(rec)
+    rec = pd.concat(recs, ignore_index=True) if recs else pd.DataFrame()
+    e2e = end_to_end(rows, rec)
+    pct = [c for c in e2e.columns if c.startswith(("without", "voxguard", "asked")) or c.endswith("repeated")]
+    show = e2e.copy()
+    for c in pct:
+        show[c] = (show[c] * 100).map(lambda v: f"{v:.1f}%")
+    for c in [c for c in e2e.columns if c.endswith("seconds_per_call")]:
+        show[c] = show[c].map(lambda v: f"{v:.2f}s")
+    note = "" if mode == "tts" else "\n(text mode: answers taken as said, so recovery is an upper bound)"
+    return "Values saved correctly, per call:\n" + show.to_string(index=False) + note
+
+
 def probe(config: str, expect: str, accent: str) -> str:
     """Run one matching case through every agent in a config; show the agent's own transcript."""
     from .backends.audio import read_wav
@@ -182,6 +219,14 @@ def main(argv=None) -> None:
     pb.add_argument("--runs", default="runs")
     pb.add_argument("--out", default="published")
 
+    rc = sub.add_parser("recover", help="Layer 3: replay each confirmation as a follow-up turn and score it")
+    rc.add_argument("--runs", default="runs")
+    rc.add_argument("--config", default="configs/deepgram_endpointing.toml",
+                    help="config whose [shadow] recognizes the caller's answers")
+    rc.add_argument("--mode", choices=["tts", "text"], default="tts",
+                    help="tts: speak and recognize each answer (realistic); text: take answers as said")
+    rc.add_argument("--model", default=None, help="only runs whose model name contains this")
+
     au = sub.add_parser("audit", help="find test cases whose scripted words do not say the labeled number")
     au.add_argument("--cases", default="data/cases.jsonl")
 
@@ -244,6 +289,8 @@ def main(argv=None) -> None:
         print(make_samples(a.cases, a.out, a.per_kind, a.from_runs))
     elif a.cmd == "publish":
         print(publish_runs(a.runs, a.out))
+    elif a.cmd == "recover":
+        print(recover(a.runs, a.config, a.mode, a.model))
     elif a.cmd == "audit":
         from .bench.dataset import audit_cases
         from .bench.report import EXCLUDE_FILE

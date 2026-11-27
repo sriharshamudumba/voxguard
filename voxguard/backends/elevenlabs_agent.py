@@ -46,6 +46,7 @@ def input_rate(meta: dict) -> int:
 
 class ElevenLabsAgentBackend(AgentBackend):
     kind = "platform"
+    heard_source = "pipeline"
 
     def __init__(self, agent_id: str, api_key: str | None = None, api_key_env: str = "ELEVENLABS_API_KEY",
                  override_prompt: bool = False, timeout: float = 30, pace: bool = True, name: str | None = None):
@@ -76,6 +77,7 @@ class ElevenLabsAgentBackend(AgentBackend):
         import websockets
         col = CallCollector()
         text: list[str] = []
+        heard: list[str] = []
         t0 = time.perf_counter()
         try:
             url = await self._url()
@@ -97,6 +99,8 @@ class ElevenLabsAgentBackend(AgentBackend):
                         if t == "ping":
                             await ws.send(json.dumps({"type": "pong",
                                                       "event_id": j.get("ping_event", {}).get("event_id")}))
+                        elif t == "user_transcript":
+                            heard.append((j.get("user_transcription_event") or {}).get("user_transcript", ""))
                         elif t == "agent_response":
                             text.append((j.get("agent_response_event") or {}).get("agent_response", ""))
                         call = parse_client_tool_call(j)
@@ -114,6 +118,7 @@ class ElevenLabsAgentBackend(AgentBackend):
                                   max_silence_s=self.timeout / 3)
                 rtask.cancel()
         except Exception as e:
-            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
-        st = col.stats()
+            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000,
+                               {"heard": heard}, error=repr(e))
+        st = dict(col.stats(), heard=heard)
         return AgentResult(col.merged(), " ".join(text), st["latency_ms"], st)

@@ -47,6 +47,33 @@ class NameGuard(VoicePlugin):
 
         return max(spans, key=score)
 
+    _NOT_NAMES = {"and", "from", "here", "please", "thanks", "thank", "calling", "speaking", "is", "it's",
+                  "its", "that's", "the", "for", "at", "on", "my", "i", "i'm", "with", "again", "yes", "no"}
+
+    def _check_partial(self, f: str, raw, m: str, ctx: TurnContext) -> Verdict | None:
+        """Layer 2: the caller said more of the name than the tool call holds ('Fahad' for 'Fahad Rahman')."""
+        texts = [t for t in (ctx.extra.get("heard"), ctx.shadow.text if ctx.shadow else None) if t]
+        toks = m.split()
+        for text in texts:
+            words = [w.strip(".,!?|") for w in text.replace("|", " ").split()]
+            low = [w.lower() for w in words]
+            last = toks[-1].lower()
+            if last not in low:
+                continue
+            i = low.index(last)
+            nxt = words[i + 1] if i + 1 < len(words) else ""
+            if not nxt.isalpha() or len(nxt) < 2 or nxt.lower() in self._NOT_NAMES:
+                continue
+            fuller = f"{m} {nxt}"
+            match = max(ctx.roster, key=lambda r: name_similarity(fuller, r), default=None)
+            if match and name_similarity(fuller, match) >= 0.8:
+                canonical = match.split("|")[0]
+                return Verdict(f, Action.CORRECT, raw, canonical, 0.1,
+                               f"caller said '{fuller}', tool got '{m}'; roster has '{canonical}'")
+            return Verdict(f, Action.CONFIRM, raw, raw, 0.6,
+                           f"caller said '{fuller}' but the tool got '{m}'; part of the name may be missing")
+        return None
+
     def check_tool_call(self, call: ToolCall, ctx: TurnContext) -> list[Verdict]:
         out = []
         for f in self.fields:
@@ -54,6 +81,10 @@ class NameGuard(VoicePlugin):
             if not raw:
                 continue
             m = str(raw).strip()
+            partial = self._check_partial(f, raw, m, ctx)
+            if partial:
+                out.append(partial)
+                continue
             shadow_span = None
             if ctx.shadow and ctx.shadow.text:
                 shadow_span = self._best_span(ctx.shadow.text, m, ctx.roster)

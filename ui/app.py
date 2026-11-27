@@ -253,11 +253,64 @@ with tab_results:
             cdf = df[df["after"].isin(outcome)] if outcome else df
             if kind_f:
                 cdf = cdf[cdf["kind"].isin(kind_f)]
-            cols = ["model", "case_id", "accent", "expected", "before_value", "after_value", "action", "after",
+            cdf = cdf.assign(backend_receives=[
+                "held: asks the caller" if a == "confirm" else v for a, v in zip(cdf["action"], cdf["after_value"],
+                                                                              strict=False)])
+            cols = ["model", "case_id", "accent", "expected", "before_value", "backend_receives", "action", "after",
                     "p_error", "reason", "shadow_text", "caller_text"]
-            st.dataframe(cdf[cols], hide_index=True, width="stretch")
+            st.dataframe(cdf[cols].rename(columns={"before_value": "without_voxguard"}), hide_index=True,
+                         width="stretch")
             st.download_button("Download rows (CSV)", df.to_csv(index=False), "voxguard_rows.csv")
             st.download_button("Download summary (CSV)", summ.to_csv(index=False), "voxguard_summary.csv")
+
+            from voxguard.bench.layers_report import LAYER_LABEL, layer1_table, layer2_shares
+            from voxguard.bench.recover import end_to_end, load_recovery
+            st.subheader("Three layers")
+            st.caption("Layer 1, recognition: did the system hear the right words? Layer 2, understanding: did "
+                       "they become the right value? Layer 3, recovery: when wrong, was it fixed without the caller "
+                       "repeating everything?")
+            l1 = layer1_table(df)
+            if not l1.empty:
+                st.write("Layer 1: recognition")
+                st.dataframe(l1, hide_index=True, width="stretch")
+            sh = layer2_shares(df)
+            if not sh.empty:
+                import tempfile
+
+                from voxguard.bench.layers_report import layer2_chart
+                st.write("Layer 2: where wrong values came from, without voxguard")
+                with tempfile.TemporaryDirectory() as tmp:
+                    layer2_chart(sh, Path(tmp) / "layers.png")
+                    st.image(str(Path(tmp) / "layers.png"), width="stretch")
+                t = (sh.drop(columns="errors") * 100).round(0)
+                t.columns = [LAYER_LABEL[c] + " %" for c in t.columns]
+                t.insert(0, "errors", sh["errors"].astype(int))
+                st.dataframe(t, width="stretch")
+            if l1.empty and sh.empty:
+                st.caption("These runs have no transcripts. Rerun the benchmark to score Layers 1 and 2.")
+            recs = []
+            for run in df["run"].unique():
+                for d in (RUNS_DIR, "published"):
+                    r = load_recovery(Path(d) / run)
+                    if not r.empty:
+                        r["model"] = df.loc[df["run"] == run, "model"].iloc[0]   # the label shown above
+                        recs.append(r)
+                        break
+            if recs:
+                e = end_to_end(df, pd.concat(recs, ignore_index=True))
+                st.write("Layer 3: values saved correctly per call, and the caller's extra time")
+                show = pd.DataFrame({
+                    "model": e["model"],
+                    "without voxguard": (e["without_voxguard"] * 100).round(1),
+                    "voxguard + repeat everything": (e["voxguard_full"] * 100).round(1),
+                    "voxguard + targeted repair": (e["voxguard_targeted"] * 100).round(1),
+                    "extra s/call, targeted": e["targeted_seconds_per_call"].round(2),
+                    "extra s/call, full": e["full_seconds_per_call"].round(2),
+                    "re-said, targeted %": (e["targeted_share_repeated"] * 100).round(0),
+                })
+                st.dataframe(show, hide_index=True, width="stretch")
+            else:
+                st.caption("Layer 3: run `voxguard recover` to replay each confirmation as a follow-up turn.")
 
 # --------------------------------------------------------------------------- Endpointing
 with tab_vad:

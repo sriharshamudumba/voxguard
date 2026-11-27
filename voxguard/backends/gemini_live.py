@@ -24,6 +24,7 @@ URL = ("wss://generativelanguage.googleapis.com/ws/"
 
 class GeminiLiveBackend(AgentBackend):
     kind = "sts"
+    heard_source = "side_channel"
 
     def __init__(self, model: str = "gemini-3.8-live", api_key: str | None = None,
                  api_key_env: str = "GEMINI_API_KEY", response_modality: str = "AUDIO",
@@ -39,6 +40,7 @@ class GeminiLiveBackend(AgentBackend):
         pcm = to_pcm16(resample(turn.audio, turn.sr, 16000))
         calls: list[ToolCall] = []
         text: list[str] = []
+        heard: list[str] = []
         t0 = time.perf_counter()
         setup = {"setup": {
             "model": self.model,
@@ -49,6 +51,8 @@ class GeminiLiveBackend(AgentBackend):
             # text of what the model says, so a spoken question ("could you spell that?")
             # is scored as the agent asking, not as a missing value
             "outputAudioTranscription": {},
+            # Layer 1: a transcript of the caller (a side channel; the model itself hears audio)
+            "inputAudioTranscription": {},
         }}
         try:
             async with websockets.connect(f"{URL}?key={self.api_key}", max_size=None) as ws:
@@ -63,12 +67,17 @@ class GeminiLiveBackend(AgentBackend):
                 await ws.send(json.dumps({"realtimeInput": {"activityEnd": {}}}))
                 t_end = time.perf_counter()
                 first = None
+                done = False
                 while True:
                     msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=self.timeout))
+                    heard_part = ((msg.get("serverContent") or {}).get("inputTranscription") or {}).get("text")
+                    if heard_part:
+                        heard.append(heard_part)
                     if "toolCall" in msg:
                         first = first or (time.perf_counter() - t_end) * 1000
                         for fc in msg["toolCall"].get("functionCalls", []):
                             calls.append(ToolCall(fc.get("name", ""), fc.get("args") or {}))
+                        done = True
                         break  # the model waits for a toolResponse; one call is all we score
                     sc = msg.get("serverContent") or {}
                     spoken = (sc.get("outputTranscription") or {}).get("text")
@@ -80,8 +89,21 @@ class GeminiLiveBackend(AgentBackend):
                             first = first or (time.perf_counter() - t_end) * 1000
                             text.append(part["text"])
                     if sc.get("turnComplete"):
+                        done = True
                         break
+                # the caller transcript can trail the tool call: collect it briefly
+                if done:
+                    try:
+                        while True:
+                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=1.5))
+                            part = ((msg.get("serverContent") or {}).get("inputTranscription") or {}).get("text")
+                            if part:
+                                heard.append(part)
+                    except Exception:
+                        pass
         except Exception as e:
-            return AgentResult(calls, "".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
+            return AgentResult(calls, "".join(text), (time.perf_counter() - t0) * 1000,
+                               {"heard": ["".join(heard)] if heard else []}, error=repr(e))
         total = (time.perf_counter() - t0) * 1000
-        return AgentResult(calls, "".join(text), first or total, {"total_ms": total, "n_tool_calls": len(calls)})
+        return AgentResult(calls, "".join(text), first or total,
+                           {"total_ms": total, "n_tool_calls": len(calls), "heard": ["".join(heard)] if heard else []})

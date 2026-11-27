@@ -36,6 +36,7 @@ def parse_tool_call(msg: dict) -> ToolCall | None:
 
 class AssemblyAIAgentBackend(AgentBackend):
     kind = "voice_agent_api"
+    heard_source = "pipeline"
 
     def __init__(self, api_key: str | None = None, api_key_env: str = "ASSEMBLYAI_API_KEY", url: str = URL,
                  voice: str | None = None, timeout: float = 30, pace: bool = True, name: str | None = None):
@@ -61,6 +62,7 @@ class AssemblyAIAgentBackend(AgentBackend):
         import websockets
         col = CallCollector()
         text: list[str] = []
+        heard: list[str] = []
         t0 = time.perf_counter()
         try:
             async with websockets.connect(self.url, additional_headers={"Authorization": f"Bearer {self.api_key}"},
@@ -79,6 +81,8 @@ class AssemblyAIAgentBackend(AgentBackend):
                         t = j.get("type")
                         if t == "transcript.agent":
                             text.append(j.get("text", ""))
+                        elif t == "transcript.user":
+                            heard.append(j.get("transcript") or j.get("text") or "")
                         elif t == "session.error":
                             text.append("ERROR " + json.dumps(j))
                         call = parse_tool_call(j)
@@ -96,6 +100,7 @@ class AssemblyAIAgentBackend(AgentBackend):
                 rtask.cancel()
                 await ws.send(json.dumps({"type": "session.end"}))
         except Exception as e:
-            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
-        st = col.stats()
+            return AgentResult(col.merged(), " ".join(text), (time.perf_counter() - t0) * 1000,
+                               {"heard": heard}, error=repr(e))
+        st = dict(col.stats(), heard=heard)
         return AgentResult(col.merged(), " ".join(text), st["latency_ms"], st)

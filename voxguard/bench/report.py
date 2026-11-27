@@ -240,6 +240,8 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
               "Latency is measured from the end of caller audio to the tool call. Models with manual turn "
               "commits (OpenAI, Gemini) and platforms with their own end-of-turn detection (Deepgram, "
               "AssemblyAI, ElevenLabs, Vapi) are measured differently; compare within each group.", ""]
+    from .layers_report import layers_markdown
+    lines += layers_markdown(rows, runs_dir, out)
     if rows["model"].str.startswith("mock:").any():
         lines.insert(2, "**Includes simulated mock models. Do not report those rows as real results.**\n")
     (out / "REPORT.md").write_text("\n".join(lines))

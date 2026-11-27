@@ -22,6 +22,7 @@ from ..backends.audio import read_wav
 from ..backends.base import AgentBackend, ShadowASR, TurnInput
 from ..core.plugin import PluginChain
 from ..core.types import ShadowTranscript, ToolCall, TurnContext
+from ..layers import attribute, recognize_entity
 from ..names import NameGuard
 from ..numbers import NumberGuard
 from .dataset import SYSTEM_PROMPT, TOOLS, Case
@@ -63,7 +64,10 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
     res, (st, shadow_ms) = await asyncio.gather(agent.run_turn(turn), run_shadow())
     call = next((c for c in res.tool_calls if c.name == "record_details"), None) or \
         (res.tool_calls[0] if res.tool_calls else ToolCall("record_details", {}))
-    ctx = TurnContext(shadow=st, roster=case.roster, known_values=case.known_values)
+    heard = " | ".join(h for h in (res.raw.get("heard") or []) if h) or None
+    heard_source = getattr(agent, "heard_source", "none") if heard else "none"
+    ctx = TurnContext(shadow=st, roster=case.roster, known_values=case.known_values,
+                      extra={"heard": heard, "heard_source": heard_source})
     t = time.perf_counter()
     guarded = chain.guard_tool_call(call, ctx)
     guard_ms = (time.perf_counter() - t) * 1000
@@ -74,6 +78,8 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
         v = by_field.get(f)
         b, a = call.args.get(f), guarded.tool_call.args.get(f)
         before_o, after_o = score_field(f, exp, b, a, v.action.value if v else None, res.text)
+        layer1 = recognize_entity(f, exp, heard)
+        cut_in = bool(res.raw.get("cut_in", False))
         rows.append({
             "case_id": case.id, "kind": case.kind, "accent": case.accent or "unknown", "trial": trial,
             "field": f, "model": agent.name, "agent_kind": agent.kind,
@@ -82,9 +88,10 @@ async def _one(case: Case, agent: AgentBackend, shadow: ShadowASR | None, chain:
             "reason": v.reason if v else "", "before": before_o, "after": after_o,
             "shadow_text": st.text if st else None, "agent_ms": res.latency_ms, "shadow_ms": shadow_ms,
             "guard_ms": guard_ms, "agent_error": res.error, "caller_text": case.caller_text,
-            "cut_in": bool(res.raw.get("cut_in", False)), "n_tool_calls": res.raw.get("n_tool_calls"),
+            "cut_in": cut_in, "n_tool_calls": res.raw.get("n_tool_calls"),
             "agent_text": res.text,
-            "agent_heard": " | ".join(res.raw.get("heard", []) or []) or None,
+            "agent_heard": heard, "heard_source": heard_source,
+            "layer1": layer1, "layer2": attribute(before_o, layer1, cut_in),
             "provider_warnings": " | ".join(res.raw.get("warnings", []) or []) or None,
         })
     return rows

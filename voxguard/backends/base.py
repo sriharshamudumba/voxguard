@@ -39,6 +39,11 @@ class TurnInput:
 
 
 class AgentBackend:
+    # Where a transcript of the caller comes from, if the platform sends one (Layer 1):
+    #   "pipeline"      the transcript the platform's LLM actually received (cascade platforms)
+    #   "side_channel"  a separate transcription next to a speech-to-speech model, which hears audio
+    #   "none"          no transcript
+    heard_source: str = "none"
     name: str = "agent"
     kind: str = "unknown"              # "sts", "cascade", "audio_llm", "mock"
 

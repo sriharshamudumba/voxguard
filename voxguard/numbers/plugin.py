@@ -55,9 +55,38 @@ class NumberGuard(VoicePlugin):
         out: list[Verdict] = []
         for fname, kind in self.fields.items():
             if fname not in call.args or call.args[fname] in (None, ""):
+                missing = self._check_missing(fname, kind, ctx, call)
+                if missing:
+                    out.append(missing)
                 continue
             out.append(self._check_field(fname, kind, call.args[fname], ctx))
         return out
+
+    def _evidence(self, ctx: TurnContext, kind: str) -> tuple[str | None, str | None]:
+        """(digits in the agent's own transcript, digits the second recognizer heard)."""
+        from ..layers.recognition import heard_digits
+        n = expected_length(kind)
+        heard = ctx.extra.get("heard")
+        h = heard_digits(heard, n) if heard else None
+        s = heard_digits(ctx.shadow.text, n) if ctx.shadow and ctx.shadow.text else None
+        return h, s
+
+    def _check_missing(self, fname: str, kind: str, ctx: TurnContext, call: ToolCall) -> Verdict | None:
+        """Layer 2: the caller said a number but the tool call left the field out.
+
+        Only for kinds with a fixed length (phone, card): a free-length ID cannot be told apart
+        from another number in the same sentence."""
+        n = expected_length(kind)
+        if not n:
+            return None
+        valid = VALIDATORS.get(kind, VALIDATORS["number"])
+        h, s = self._evidence(ctx, kind)
+        used = {only_digits(str(v)) for v in call.args.values() if v}
+        heard = next((d for d in (h, s) if d and len(d) == n and valid(d) and d not in used), None)
+        if not heard:
+            return None
+        return Verdict(fname, Action.CONFIRM, None, None, 0.9,
+                       f"the caller said a {kind.replace('_', ' ')} ({heard}) but the tool call left it out")
 
     def _check_field(self, fname: str, kind: str, raw, ctx: TurnContext) -> Verdict:
         """Models sometimes write digits as words ("eight eight eight"). Convert first;
@@ -83,6 +112,17 @@ class NumberGuard(VoicePlugin):
 
         if known and m in known:
             return Verdict(fname, Action.PASS, raw, raw, 0.01, "matches a known record")
+
+        # Layer 2: the LLM had a transcript and turned it into digits. Converting spoken
+        # numbers is a grammar problem, so redo it with code and compare.
+        heard_text = ctx.extra.get("heard")
+        if heard_text:
+            h, s2 = self._evidence(ctx, kind)
+            pipeline = ctx.extra.get("heard_source") == "pipeline"
+            if h and h != m and valid(h) and (s2 == h or (pipeline and s2 is None)):
+                why = "the second recognizer agrees" if s2 == h else "no other evidence"
+                return Verdict(fname, Action.CORRECT, raw, h, 0.05,
+                               f"the agent's transcript says {h} ({why}); the LLM wrote {m}")
 
         # No independent evidence: only format checks are possible.
         if s is None:

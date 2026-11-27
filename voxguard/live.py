@@ -23,8 +23,10 @@ from .bench.dataset import SYSTEM_PROMPT, TOOLS
 from .bench.metrics import agent_asked, norm
 from .core.plugin import PluginChain
 from .core.types import ShadowTranscript, ToolCall, TurnContext
+from .layers import Repair, apply_reply, attribute, heard_digits, plan_repair, recognize_entity
 from .names import NameGuard
 from .numbers import NumberGuard
+from .numbers.validate import expected_length
 
 FIELDS = ("name", "phone", "order_id")
 
@@ -52,6 +54,11 @@ class LiveResult:
     cut_in: bool = False
     error: str | None = None
     scores: dict = field(default_factory=dict)       # field -> (before_ok, after_ok) when truth given
+    heard: str | None = None                         # Layer 1: the caller transcript the platform sent
+    heard_source: str = "none"                       # pipeline | side_channel | none
+    layer1: dict = field(default_factory=dict)       # field -> recognition outcome (when truth given)
+    layer2: dict = field(default_factory=dict)       # field -> which layer failed (when truth given)
+    repairs: dict = field(default_factory=dict)      # field -> targeted Repair, for confirmations
 
 
 async def _run_one(cfg: dict, turn: TurnInput, shadow_task: asyncio.Task, chain: PluginChain,
@@ -66,10 +73,20 @@ async def _run_one(cfg: dict, turn: TurnInput, shadow_task: asyncio.Task, chain:
     shadow = await shadow_task
     call = next((c for c in res.tool_calls if c.name == "record_details"), None) or \
         (res.tool_calls[0] if res.tool_calls else ToolCall("record_details", {}))
-    guarded = chain.guard_tool_call(call, TurnContext(shadow=shadow, roster=roster, known_values=known))
+    heard = " | ".join(h for h in (res.raw.get("heard") or []) if h) or None
+    source = getattr(agent, "heard_source", "none") if heard else "none"
+    ctx = TurnContext(shadow=shadow, roster=roster, known_values=known,
+                      extra={"heard": heard, "heard_source": source})
+    guarded = chain.guard_tool_call(call, ctx)
     out = LiveResult(agent.name, dict(call.args), dict(guarded.tool_call.args),
                      {v.field: (v.action.value, v.reason) for v in guarded.verdicts},
-                     res.text, res.latency_ms, bool(res.raw.get("cut_in", False)), res.error)
+                     res.text, res.latency_ms, bool(res.raw.get("cut_in", False)), res.error,
+                     heard=heard, heard_source=source)
+    for v in guarded.verdicts:
+        if v.action.value == "confirm":
+            kind = {"phone": "phone", "order_id": "order_id"}.get(v.field, "name")
+            ev = _evidence_for(v.field, kind, out.before.get(v.field), heard, source, shadow)
+            out.repairs[v.field] = plan_repair(v.field, kind, out.before.get(v.field), ev, "", "targeted")
     for f, exp in truth.items():
         if not exp:
             continue
@@ -78,7 +95,43 @@ async def _run_one(cfg: dict, turn: TurnInput, shadow_task: asyncio.Task, chain:
         act = out.actions.get(f, ("pass", ""))[0]
         a_ok = act == "confirm" or norm(kind, out.after.get(f)) == norm(kind, exp)
         out.scores[f] = (b_ok, a_ok, act)
+        out.layer1[f] = recognize_entity(f, exp, heard)
+        out.layer2[f] = attribute("correct" if b_ok else ("wrong" if out.before.get(f) else "missing"),
+                                  out.layer1[f], out.cut_in)
     return out
+
+
+def _evidence_for(field: str, kind: str, before, heard: str | None, source: str,
+                  shadow: ShadowTranscript | None) -> str | None:
+    texts = ([heard] if heard and source == "pipeline" else []) + ([shadow.text] if shadow and shadow.text else [])
+    if kind in {"phone", "order_id"}:
+        for t in texts:
+            d = heard_digits(t, expected_length(kind))
+            if d:
+                return d
+        return None
+    if not texts or not before:
+        return None
+    from .names.plugin import NameGuard
+    return NameGuard()._best_span(texts[0], str(before), []) or None
+
+
+async def answer_repair(repair: Repair, before, audio: np.ndarray, sr: int, shadow_cfg: dict,
+                        phone_line: bool = True) -> tuple[str, str]:
+    """Layer 3, live: recognize the caller's spoken answer and merge it. Returns (heard, final value)."""
+    shadow = build_shadow(shadow_cfg)
+    if phone_line:
+        audio, sr = telephony_channel(audio, sr, seed=7)
+    st = await shadow.transcribe(TurnInput(audio, sr, "", [], "", {}, 0, ""))
+    kind = {"phone": "phone", "order_id": "order_id"}.get(repair.field, "name")
+    heard = st.text or ""
+    parts = [p for p in heard.replace(" / ", "|").split("|")] if len(repair.asks) > 1 else [heard]
+    if len(repair.asks) > 1 and len(parts) < len(repair.asks):
+        words = heard.split()                     # one answer for several parts: split evenly
+        k = max(1, len(words) // len(repair.asks))
+        parts = [" ".join(words[i * k:(i + 1) * k if i < len(repair.asks) - 1 else None])
+                 for i in range(len(repair.asks))]
+    return heard, apply_reply(repair, before, parts, kind)
 
 
 async def compare(audio: np.ndarray, sr: int, agent_cfgs: list[dict], shadow_cfg: dict,

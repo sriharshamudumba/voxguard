@@ -49,7 +49,10 @@ def score_field(field: str, expected, before, after, action: str | None,
     k = field_kind(field)
     e, b, a = norm(k, expected), norm(k, before), norm(k, after)
     if not b:
-        return ("asked", "asked") if agent_asked(agent_text) else ("missing", "missing")
+        before_o = "asked" if agent_asked(agent_text) else "missing"
+        if action == "confirm":          # voxguard noticed the caller said it and the tool left it out
+            return before_o, "caught"
+        return before_o, before_o
     before_o = "correct" if b == e else "wrong"
     if action == "confirm":
         return before_o, ("caught" if before_o == "wrong" else "false_confirm")

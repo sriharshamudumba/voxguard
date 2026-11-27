@@ -19,6 +19,22 @@ Known failure modes this targets:
 | Cutting in mid-number | caller pauses between digit groups and the agent starts talking |
 | Mispronounced numbers and names in TTS | "58213" read as a garbled word |
 
+## Three layers
+
+Every turn is scored, and fixed, at three layers ([docs/LAYERS.md](docs/LAYERS.md)):
+
+| Layer | Question | voxguard |
+|---|---|---|
+| 1. Recognition | Did the system hear the right words? | Records each platform's caller transcript; a second recognizer is independent evidence |
+| 2. Understanding | Did those words become the right value? | Re-reads numbers from the transcript with a grammar instead of trusting the LLM's conversion; flags a phone number the tool call left out, or a name with a part missing |
+| 3. Recovery | When it is wrong, is it fixed without the caller repeating everything? | Asks only for the digit group or name part in doubt; `voxguard recover` replays every confirmation as a spoken follow-up and compares it with "repeat the whole number" |
+
+```bash
+voxguard bench --config configs/run_openai_realtime.toml   # records transcripts, scores layers 1 and 2
+voxguard recover --config configs/deepgram_endpointing.toml # layer 3 on the latest run per model
+voxguard report                                             # REPORT.md gains a "Three layers" section
+```
+
 ## How it works
 
 Every plugin applies one model: **noisy channel + context prior + expected-cost decision**.

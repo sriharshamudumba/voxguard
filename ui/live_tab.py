@@ -89,9 +89,9 @@ def _status(field: str, value, truth: str, action: str | None) -> tuple[str, str
 
 
 def _show(kind: str, value, text: str) -> None:
-    line = f"**{value}**" if value else "(nothing)"
+    line = f"**{value}**" if value else ("" if value is None and text else "(nothing)")
     if text:
-        line += f"  \n{text}"
+        line = f"{line}  \n{text}" if line else text
     {"ok": st.success, "bad": st.error, "ask": st.warning}.get(kind, st.info)(line)
 
 
@@ -188,60 +188,124 @@ def render() -> None:
     if over:
         st.warning("Demo limit reached for this session. Use your own keys above to keep testing.")
     ready = audio is not None and chosen and not over
-    if not st.button("Compare", type="primary", disabled=not ready):
-        return
+    if st.button("Compare", type="primary", disabled=not ready):
+        cfgs = []
+        for label in chosen:
+            base, env = PRESETS[label]
+            cfg = dict(base, name=label)
+            if env:
+                cfg["api_key"] = key_for(env)
+            if cfg["type"] == "elevenlabs_agent":
+                if not el_id:
+                    st.warning("ElevenLabs needs an agent ID; skipped.")
+                    continue
+                cfg["agent_id"] = el_id
+            if cfg["type"] == "vapi":
+                if not vapi_id:
+                    st.warning("Vapi needs an assistant ID; skipped.")
+                    continue
+                cfg["assistant_id"] = vapi_id
+            cfgs.append(cfg)
+        if unlocked:
+            _count_run()
+        with st.spinner(f"Running {len(cfgs)} models on {len(audio) / sr:.1f} s of audio"):
+            results, shadow_tr, (heard, heard_sr) = asyncio.run(compare(
+                audio, sr, cfgs, shadow_cfg, roster_txt.splitlines(), orders_txt.splitlines(), phone_line, truth))
+        fields_used = [f for f in FIELDS if truth.get(f)] or \
+            [f for f in FIELDS if any(r.before.get(f) or r.after.get(f) for r in results)] or ["phone"]
+        # results stay in this browser session so the caller can answer voxguard's questions;
+        # keys are not kept here: answers use the recognizer built from the current keys
+        st.session_state["live"] = {"results": results, "shadow_text": shadow_tr.text, "audio": (heard, heard_sr),
+                                    "truth": truth, "fields": fields_used, "phone_line": phone_line}
+    state = st.session_state.get("live")
+    if state:
+        _render_results(state, shadow_cfg)
 
-    cfgs = []
-    for label in chosen:
-        base, env = PRESETS[label]
-        cfg = dict(base, name=label)
-        if env:
-            cfg["api_key"] = key_for(env)
-        if cfg["type"] == "elevenlabs_agent":
-            if not el_id:
-                st.warning("ElevenLabs needs an agent ID; skipped.")
-                continue
-            cfg["agent_id"] = el_id
-        if cfg["type"] == "vapi":
-            if not vapi_id:
-                st.warning("Vapi needs an assistant ID; skipped.")
-                continue
-            cfg["assistant_id"] = vapi_id
-        cfgs.append(cfg)
 
-    if unlocked:
-        _count_run()
-    with st.spinner(f"Running {len(cfgs)} models on {len(audio) / sr:.1f} s of audio"):
-        results, shadow_tr, (heard, heard_sr) = asyncio.run(compare(
-            audio, sr, cfgs, shadow_cfg, roster_txt.splitlines(), orders_txt.splitlines(), phone_line, truth))
+LAYER1_TEXT = {"correct": ("ok", "Heard it right"), "wrong": ("bad", "Heard it wrong"),
+               "sound_alike": ("ask", "Same sound, different spelling"),
+               "partial": ("bad", "Heard only part of it")}
+LAYER2_TEXT = {
+    "turn_taking": "Without voxguard this failed at turn-taking: the agent ended the turn mid-value.",
+    "recognition": "Without voxguard this failed at recognition: the recognizer heard the wrong words.",
+    "spelling": "Without voxguard this failed at name spelling: the right sound, but spelling cannot be known "
+                "from audio.",
+    "understanding": "Without voxguard this failed at understanding: the words were heard right, and the LLM "
+                     "wrote the wrong value.",
+    "unknown": "This provider sends no transcript, so hearing and understanding cannot be told apart.",
+}
 
-    # ---- results: one block per model, without vs with voxguard
-    fields_used = [f for f in FIELDS if truth.get(f)] or \
-        [f for f in FIELDS if any(r.before.get(f) or r.after.get(f) for r in results)] or ["phone"]
+
+def _render_results(state: dict, shadow_cfg: dict) -> None:
+    from voxguard.bench.metrics import norm
+    from voxguard.live import answer_repair
+
+    results, truth, fields_used = state["results"], state["truth"], state["fields"]
     for r in results:
         st.divider()
         st.subheader(r.model)
         if r.error:
             st.error(f"Provider error: {r.error[:300]}")
             continue
+        if r.heard:
+            src = "what its LLM received" if r.heard_source == "pipeline" else \
+                "a side transcript; this model hears audio directly"
+            st.caption(f"Transcript ({src}): \"{r.heard[:300]}\"")
         if asked(r):
             st.info(f"The model asked the caller instead of recording a value: \"{r.agent_text[:200]}\"")
-            continue
-        left, right = st.columns(2)
-        left.caption("Your backend receives, without voxguard")
-        right.caption("With voxguard")
+        heads = st.columns(3)
+        heads[0].caption("1. Heard")
+        heads[1].caption("2. Understood: without voxguard, then with it")
+        heads[2].caption("3. Recovery")
         for f in fields_used:
             act, why = r.actions.get(f, (None, ""))
-            with left:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.write(FIELD_LABEL[f])
+                l1 = r.layer1.get(f)
+                if l1:
+                    _show(LAYER1_TEXT[l1][0], None, LAYER1_TEXT[l1][1])
+                elif r.heard:
+                    st.caption("Add what you said (above) to score this.")
+                else:
+                    st.caption("This provider sends no transcript.")
+            with c2:
+                st.write(FIELD_LABEL[f])
                 kind, text = _status(f, r.before.get(f), truth.get(f, ""), None)
-                st.write(FIELD_LABEL[f])
                 _show(kind, r.before.get(f), text)
-            with right:
                 kind, text = _status(f, r.after.get(f), truth.get(f, ""), act)
-                st.write(FIELD_LABEL[f])
                 _show(kind, r.after.get(f) if act != "confirm" else r.before.get(f), text)
                 if why:
                     st.caption(why.replace("shadow", "second recognizer"))
+            with c3:
+                st.write(FIELD_LABEL[f])
+                rep = r.repairs.get(f)
+                if act == "correct":
+                    st.caption("Fixed without asking the caller.")
+                elif rep is None:
+                    st.caption("Nothing to recover." if act else "")
+                else:
+                    whole = f != "name" and any(a.start == 0 and a.end == rep.total_units for a in rep.asks)
+                    asked_units = "the whole number" if whole else "only the part in doubt"
+                    st.warning(" ".join(a.question for a in rep.asks))
+                    if shadow_cfg.get("type") == "mock":
+                        st.caption(f"voxguard asks for {asked_units}. Answering out loud needs a real "
+                                   "recognizer: enter the passcode or a Deepgram or OpenAI key above.")
+                    else:
+                        st.caption(f"voxguard asks for {asked_units}. Answer as the caller:")
+                        ans = st.audio_input("Answer", key=f"ans_{r.model}_{f}", label_visibility="collapsed")
+                        if ans is not None:
+                            x, asr = decode_wav(ans.getvalue())
+                            with st.spinner("Recognizing your answer"):
+                                heard_ans, final = asyncio.run(answer_repair(
+                                    rep, r.before.get(f), x, asr, shadow_cfg, state.get("phone_line", True)))
+                            exp = truth.get(f, "")
+                            k = {"phone": "phone", "order_id": "order_id"}.get(f, "name")
+                            ok = ("ok" if norm(k, final) == norm(k, exp) else "bad") if exp else "none"
+                            _show(ok, final, f"heard: \"{heard_ans}\"")
+            l2 = r.layer2.get(f)
+            if l2 and l2 != "ok":
+                st.caption(LAYER2_TEXT[l2])
         notes = []
         if r.latency_ms == r.latency_ms:
             notes.append(f"latency {r.latency_ms:.0f} ms")
@@ -252,11 +316,12 @@ def render() -> None:
 
     st.divider()
     with st.expander("Details: what the models heard"):
+        heard, heard_sr = state["audio"]
         st.audio(wav_bytes(heard, heard_sr), format="audio/wav")
-        st.write(f"Second recognizer: {shadow_tr.text or '(empty)'}")
+        st.write(f"Second recognizer: {state['shadow_text'] or '(empty)'}")
         st.dataframe(pd.DataFrame([{
-            "Model": r.model, "Before": json.dumps(r.before), "After": json.dumps(r.after),
-            "Agent said": r.agent_text[:200], "Error": r.error or ""} for r in results]),
-            hide_index=True, width="stretch")
+            "Model": r.model, "Transcript": r.heard or "", "Before": json.dumps(r.before),
+            "After": json.dumps(r.after), "Agent said": r.agent_text[:200], "Error": r.error or ""}
+            for r in results]), hide_index=True, width="stretch")
         st.caption("Latency is measured differently for providers that detect the end of the turn "
                    "themselves; compare it within each group. Sample voices are synthetic.")

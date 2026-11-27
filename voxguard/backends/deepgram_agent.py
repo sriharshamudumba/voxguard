@@ -41,6 +41,7 @@ def parse_function_calls(msg: dict) -> list[ToolCall]:
 
 class DeepgramAgentBackend(AgentBackend):
     kind = "voice_agent_api"
+    heard_source = "pipeline"
 
     def __init__(self, listen_model: str = "nova-3", think_provider: str = "open_ai",
                  think_model: str = "gpt-4o-mini", speak_model: str = "aura-2-thalia-en",

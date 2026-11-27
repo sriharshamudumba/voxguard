@@ -24,25 +24,32 @@ from .base import AgentBackend, AgentResult, TurnInput
 
 class OpenAIRealtimeBackend(AgentBackend):
     kind = "sts"
+    heard_source = "side_channel"
 
     def __init__(self, model: str = "gpt-realtime", api_key: str | None = None,
                  api_key_env: str = "OPENAI_API_KEY", url: str = "wss://api.openai.com/v1/realtime",
-                 schema: str = "ga", timeout: float = 60, name: str | None = None):
+                 schema: str = "ga", timeout: float = 60, name: str | None = None,
+                 transcribe_model: str = "gpt-4o-transcribe"):
         self.model = model
         self.api_key = api_key or os.environ.get(api_key_env, "")
         self.url = url
         self.schema = schema
         self.timeout = timeout
         self.name = name or f"openai_realtime:{model}"
+        self.transcribe_model = transcribe_model
 
     def _session(self, turn: TurnInput) -> dict:
         tools = [{"type": "function", **t} for t in turn.tools]
         if self.schema == "beta":
             return {"modalities": ["text"], "instructions": turn.system_prompt,
                     "input_audio_format": "pcm16", "turn_detection": None,
+                    "input_audio_transcription": {"model": self.transcribe_model},
                     "tools": tools, "tool_choice": "auto", "temperature": 0.6}
         return {"type": "realtime", "instructions": turn.system_prompt, "output_modalities": ["text"],
-                "audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "turn_detection": None}},
+                "audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "turn_detection": None,
+                                    # Layer 1: a transcript of the caller. It is not what the model
+                                    # hears (the model hears audio); it is a side channel.
+                                    "transcription": {"model": self.transcribe_model}}},
                 "tools": tools, "tool_choice": "auto"}
 
     async def run_turn(self, turn: TurnInput) -> AgentResult:
@@ -53,6 +60,7 @@ class OpenAIRealtimeBackend(AgentBackend):
         pcm = to_pcm16(resample(turn.audio, turn.sr, 24000))
         calls: list[ToolCall] = []
         text: list[str] = []
+        heard: list[str] = []
         t0 = time.perf_counter()
         try:
             async with websockets.connect(f"{self.url}?model={self.model}", additional_headers=headers,
@@ -82,9 +90,19 @@ class OpenAIRealtimeBackend(AgentBackend):
                         except json.JSONDecodeError:
                             args = {"_unparsed": msg.get("arguments")}
                         calls.append(ToolCall(msg.get("name", ""), args))
+                    elif et == "conversation.item.input_audio_transcription.completed":
+                        heard.append(msg.get("transcript", ""))
                     elif et == "response.done":
                         break
+                if not heard:  # transcription can finish after the response
+                    try:
+                        while not heard:
+                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+                            if msg.get("type") == "conversation.item.input_audio_transcription.completed":
+                                heard.append(msg.get("transcript", ""))
+                    except Exception:
+                        pass
         except Exception as e:
             return AgentResult(calls, "".join(text), (time.perf_counter() - t0) * 1000, error=repr(e))
         total = (time.perf_counter() - t0) * 1000
-        return AgentResult(calls, "".join(text), first_event_ms or total, {"total_ms": total})
+        return AgentResult(calls, "".join(text), first_event_ms or total, {"total_ms": total, "heard": heard})
