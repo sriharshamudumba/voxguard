@@ -1,0 +1,43 @@
+# v2 benchmark: 160 scripts (40 per entity type) x 4 accents = 640 turns per model.
+# Run everything with scripts/run_v2.sh.
+
+[data]
+cases = "data/v2/cases.jsonl"
+
+[run]
+repeats = 1
+concurrency = 3
+use_keyterms = true
+out_dir = "runs"
+
+[shadow]
+type = "deepgram"
+model = "nova-3"
+
+# smart_format is off by default in the Voice Agent API; Flux does not support it.
+# Setup 4 repeats setup 3 with an older LLM, to measure how much the LLM matters.
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Nova-3 + gpt-6-luna"
+listen_model = "nova-3"
+think_model = "gpt-6-luna"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Nova-3 smart_format + gpt-6-luna"
+listen_model = "nova-3"
+think_model = "gpt-6-luna"
+listen_options = { smart_format = true }
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Flux + gpt-6-luna"
+listen_model = "flux-general-en"
+think_model = "gpt-6-luna"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Deepgram Flux + gpt-4o-mini"
+listen_model = "flux-general-en"
+think_model = "gpt-4o-mini"

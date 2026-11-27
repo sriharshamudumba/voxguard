@@ -110,7 +110,10 @@ def make_case(kind: str, i: int, rng: random.Random) -> Case:
         return Case(cid, kind, text, {"order_id": oid}, known_values={"order_id": [oid] + decoys},
                     tts_text=text, seed=rng.randint(0, 10**9))
     pool = NAMES if kind == "name" else FIRST_TIME_NAMES
-    name = rng.choice(list(pool))
+    # walk a fixed shuffle of the pool, so names repeat only after every name was used once
+    order = sorted(pool)
+    random.Random(f"{kind}-names").shuffle(order)
+    name = order[i % len(order)]
     _, respell = pool[name]
     lead = rng.choice(["Hi, I have a reservation under", "The name is", "It's under", "This is"])
     text = f"{lead} {name}."

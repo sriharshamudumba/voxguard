@@ -1,0 +1,25 @@
+# v2 benchmark: 160 scripts (40 per entity type) x 4 accents = 640 turns per model.
+# Run everything with scripts/run_v2.sh.
+
+[data]
+cases = "data/v2/cases.jsonl"
+
+[run]
+repeats = 1
+concurrency = 4
+use_keyterms = true
+out_dir = "runs"
+
+[shadow]
+type = "deepgram"
+model = "nova-3"
+
+[[agents]]
+type = "openai_realtime"
+name = "OpenAI gpt-realtime-2.1"
+model = "gpt-realtime-2.1"
+
+[[agents]]
+type = "openai_realtime"
+name = "OpenAI gpt-realtime-2.1-mini"
+model = "gpt-realtime-2.1-mini"

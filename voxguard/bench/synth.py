@@ -65,18 +65,23 @@ def tts_espeak(text: str, voice: str = "en-us") -> bytes:
 
 def synthesize_cases(cases: list[Case], out_dir: str | Path, provider: str = "openai",
                      snr_db: float = 20.0, packet_loss: float = 0.01, piper_model: str | None = None,
-                     api_key: str | None = None, overwrite: bool = False) -> list[Case]:
+                     api_key: str | None = None, overwrite: bool = False, workers: int = 8) -> list[Case]:
+    """Synthesize every case that has no audio yet; resumable, and parallel for API providers."""
+    from concurrent.futures import ThreadPoolExecutor
+
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     for i, c in enumerate(cases):
+        if provider == "openai" and not c.accent:
+            c.accent = list(ACCENTS)[i % len(ACCENTS)]
+
+    def one(c: Case) -> None:
         path = out / f"{c.id}.wav"
         if path.exists() and not overwrite:
             c.audio_path = str(path)
-            continue
+            return
         text = c.tts_text or c.caller_text
         if provider == "openai":
-            if not c.accent:
-                c.accent = list(ACCENTS)[i % len(ACCENTS)]
             voice, instr = ACCENTS[c.accent]
             raw = tts_openai(text, voice, instr, api_key)
         elif provider == "piper":
@@ -89,4 +94,12 @@ def synthesize_cases(cases: list[Case], out_dir: str | Path, provider: str = "op
         y, sr8 = telephony_channel(x, sr, snr_db=snr_db, packet_loss=packet_loss, seed=c.seed)
         write_wav(path, y, sr8)
         c.audio_path = str(path)
+
+    n = workers if provider == "openai" else 1
+    done = 0
+    with ThreadPoolExecutor(n) as pool:
+        for _ in pool.map(one, cases):
+            done += 1
+            if done % 50 == 0:
+                print(f"  {done}/{len(cases)}", flush=True)
     return cases
