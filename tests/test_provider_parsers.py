@@ -91,3 +91,10 @@ def test_deepgram_flux_listen_settings():
     flux = DeepgramAgentBackend(listen_model="flux-general-en", api_key="x",
                                 listen_options={"eot_threshold": 0.9, "eot_timeout_ms": 5000}).listen_provider()
     assert flux["version"] == "v2" and flux["eot_threshold"] == 0.9 and "smart_format" not in flux
+
+
+def test_deepgram_think_options():
+    from voxguard.backends.deepgram_agent import DeepgramAgentBackend
+    b = DeepgramAgentBackend(think_model="gpt-6-luna", api_key="x",
+                             think_options={"reasoning_effort": "none", "temperature": "omit"})
+    assert b.think_settings() == {"type": "open_ai", "model": "gpt-6-luna", "reasoning_effort": "none"}

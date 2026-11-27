@@ -1,0 +1,36 @@
+# Which current LLMs work as the Deepgram Voice Agent's "think" model with tool calls.
+#   voxguard probe --config configs/v2/deepgram_llm_probe.toml --expect 8882722028
+[data]
+cases = "data/cases.jsonl"
+
+[shadow]
+type = "deepgram"
+model = "nova-3"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Flux + gpt-6-luna, reasoning off"
+listen_model = "flux-general-en"
+think_model = "gpt-6-luna"
+think_options = { reasoning_effort = "none", temperature = "omit" }
+
+[[agents]]
+type = "deepgram_agent"
+name = "Flux + gpt-5.4-mini"
+listen_model = "flux-general-en"
+think_model = "gpt-5.4-mini"
+think_options = { temperature = "omit" }
+
+[[agents]]
+type = "deepgram_agent"
+name = "Flux + claude-haiku-5-5"
+listen_model = "flux-general-en"
+think_provider = "anthropic"
+think_model = "claude-haiku-5-5"
+
+[[agents]]
+type = "deepgram_agent"
+name = "Flux + gemini-3.8-flash"
+listen_model = "flux-general-en"
+think_provider = "google"
+think_model = "gemini-3.8-flash"

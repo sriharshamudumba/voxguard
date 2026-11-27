@@ -47,12 +47,15 @@ class DeepgramAgentBackend(AgentBackend):
                  think_model: str = "gpt-4o-mini", speak_model: str = "aura-2-thalia-en",
                  api_key: str | None = None, api_key_env: str = "DEEPGRAM_API_KEY",
                  url: str = URL, timeout: float = 30, pace: bool = True, name: str | None = None,
-                 listen_version: str | None = None, listen_options: dict | None = None):
+                 listen_version: str | None = None, listen_options: dict | None = None,
+                 think_options: dict | None = None):
         self.listen_model = listen_model
         # Flux models use the v2 listen API, which owns end-of-turn detection
         # (eot_threshold, eot_timeout_ms, eager_eot_threshold).
         self.listen_version = listen_version or ("v2" if listen_model.startswith("flux") else None)
         self.listen_options = dict(listen_options or {})
+        # extra think.provider fields, e.g. {reasoning_effort = "none"}; temperature = "omit" drops it
+        self.think_options = dict(think_options or {})
         self.think_provider = think_provider
         self.think_model = think_model
         self.speak_model = speak_model
@@ -71,6 +74,13 @@ class DeepgramAgentBackend(AgentBackend):
         provider.update(self.listen_options)
         return provider
 
+    def think_settings(self) -> dict:
+        provider: dict = {"type": self.think_provider, "model": self.think_model, "temperature": 0}
+        provider.update(self.think_options)
+        if provider.get("temperature") == "omit":
+            del provider["temperature"]
+        return provider
+
     def settings(self, turn: TurnInput) -> dict:
         return {
             "type": "Settings",
@@ -82,7 +92,7 @@ class DeepgramAgentBackend(AgentBackend):
                 "language": "en",
                 "listen": {"provider": self.listen_provider()},
                 "think": {
-                    "provider": {"type": self.think_provider, "model": self.think_model, "temperature": 0},
+                    "provider": self.think_settings(),
                     "prompt": turn.system_prompt,
                     "functions": [{"name": t["name"], "description": t.get("description", ""),
                                    "parameters": t["parameters"]} for t in turn.tools],

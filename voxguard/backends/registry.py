@@ -71,6 +71,7 @@ def build_agent(cfg: dict[str, Any]) -> AgentBackend:
                                     think_model=cfg.get("think_model", "gpt-4o-mini"),
                                     listen_version=cfg.get("listen_version"),
                                     listen_options=cfg.get("listen_options"),
+                                    think_options=cfg.get("think_options"),
                                     api_key=cfg.get("api_key"), name=name)
     if t == "assemblyai_agent":
         from .assemblyai_agent import AssemblyAIAgentBackend
