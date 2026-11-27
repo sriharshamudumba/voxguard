@@ -219,6 +219,11 @@ with tab_results:
         names = sorted(runs["run"].unique(), reverse=True)
         chosen = st.multiselect("Runs", names, default=names[: min(4, len(names))])
         df = runs[runs["run"].isin(chosen)].copy()
+        n_failed = int(df["agent_error"].notna().sum()) if "agent_error" in df else 0
+        if n_failed:
+            st.caption(f"{n_failed} calls failed before returning (connection, billing or timeout) and are "
+                       "not scored.")
+            df = df[df["agent_error"].isna()]
         df["model"] = df["model"] + "  [" + df["run"].str[:15] + "]"
         if not df.empty:
             by = "kind"

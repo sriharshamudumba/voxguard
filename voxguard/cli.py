@@ -49,6 +49,8 @@ def recover(runs_dir: str, config: str, mode: str, model: str | None) -> str:
         return f"no runs in {runs_dir}"
     rows = latest_per_model(runs)
     rows = rows[~rows["case_id"].isin(read_excluded())]
+    if "agent_error" in rows:
+        rows = rows[rows["agent_error"].isna()]   # failed calls are not scored
     if model:
         rows = rows[rows["model"].str.contains(model, case=False)]
     shadow = None

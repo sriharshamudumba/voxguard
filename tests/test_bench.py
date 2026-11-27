@@ -100,3 +100,17 @@ def test_audit_flags_ambiguous_spoken_numbers():
               expected={"order_id": "2705864"})
     assert [b[0] for b in audit_cases([bad, ok])] == ["x"]
     assert audit_cases(generate_cases(200, seed=3)) == []   # the generator no longer writes such cases
+
+
+def test_failed_calls_are_not_scored():
+    import pandas as pd
+
+    from voxguard.bench.metrics import summarize
+    rows = pd.DataFrame([
+        {"model": "m", "kind": "phone", "before": "correct", "after": "correct", "agent_error": None,
+         "cut_in": False, "agent_ms": 1.0, "guard_ms": 1.0},
+        {"model": "m", "kind": "phone", "before": "missing", "after": "caught", "agent_error": "billing",
+         "cut_in": False, "agent_ms": 1.0, "guard_ms": 1.0},
+    ])
+    s = summarize(rows).iloc[0]
+    assert s["n"] == 1 and s["errors"] == 1 and s["caught"] == 0 and s["before_error"] == 0

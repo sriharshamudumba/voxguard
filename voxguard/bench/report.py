@@ -86,6 +86,8 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     if runs.empty:
         raise SystemExit(f"no runs in {runs_dir}")
     rows = latest_per_model(runs)
+    failed = rows[rows["agent_error"].notna()] if "agent_error" in rows else rows.iloc[0:0]
+    rows = rows[rows["agent_error"].isna()] if "agent_error" in rows else rows   # failed calls are not scored
     excluded = read_excluded()
     if excluded:
         rows = rows[~rows["case_id"].isin(excluded)]
@@ -209,6 +211,9 @@ def build_report(runs_dir: str = "runs", out_dir: str = "report") -> Path:
     lines = ["# voxguard results", "",
              f"Runs: {', '.join(sorted(rows['run'].unique()))}", "",
              "Intervals are 95% bootstrap confidence intervals, resampling whole test cases.", "",
+             *([f"Not scored: {len(failed)} calls that failed before returning (connection, billing or "
+                f"timeout errors): " + ", ".join(f"{m} {n}" for m, n in failed.groupby('model').size().items())
+                + ".", ""] if len(failed) else []),
              *([f"Excluded {len(excluded)} test cases whose scripted words do not say the labeled number "
                 f"(found by `voxguard audit`): {', '.join(excluded)}.", ""] if excluded else []),
              *([f"The second recognizer took {rows['shadow_ms'].median():.0f} ms per turn (median). It runs "

@@ -66,8 +66,15 @@ def summarize(rows: pd.DataFrame, by: str = "kind") -> pd.DataFrame:
     if rows.empty:
         return pd.DataFrame()
     out = []
-    for (model, kind), g in rows.groupby(["model", by]):
+    for (model, kind), g_all in rows.groupby(["model", by]):
+        # a call that failed (connection, billing, timeout) says nothing about the model or the
+        # guard: count it, but score only calls that returned
+        failed = int(g_all["agent_error"].notna().sum()) if "agent_error" in g_all else 0
+        g = g_all[g_all["agent_error"].isna()] if "agent_error" in g_all else g_all
         n = len(g)
+        if n == 0:
+            out.append({"model": model, by: kind, "n": 0, "errors": failed})
+            continue
         bo, ao = g["before"], g["after"]
         before_err = ((bo == "wrong") | (bo == "missing")).mean()
         silent = ao.isin(["silent_error", "broken", "missing"]).mean()
@@ -86,7 +93,7 @@ def summarize(rows: pd.DataFrame, by: str = "kind") -> pd.DataFrame:
             "agent_p50_ms": g["agent_ms"].median(),
             "agent_p95_ms": g["agent_ms"].quantile(0.95),
             "guard_p95_ms": g["guard_ms"].quantile(0.95),
-            "errors": int(g["agent_error"].notna().sum()),
+            "errors": failed,
         })
     return pd.DataFrame(out)
 
